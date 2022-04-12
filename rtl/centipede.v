@@ -1250,14 +1250,14 @@ module centipede(
       .clk(phi2 && !pause), // was s_12mhz in Mist
       .enable_179(1'b1), // was phi0_en in Mist
       .data_in(db_out[7:0]),
-      .data_out(pokey_out),
+      .data_out(pokey2_out),
       .addr(ab[3:0]),
-      .wr_en(~rw_n & ~pokey_n), // written as ~(pokey_n | rw_n) in Mist
+      .wr_en(~rw_n & ~pokey2_n), // written as ~(pokey_n | rw_n) in Mist
       .pot_in(milli ? ~sw2_i[7:0] : 8'd0),
-      .channel_0_out(pokey_ch0),
-      .channel_1_out(pokey_ch1),
-      .channel_2_out(pokey_ch2),
-      .channel_3_out(pokey_ch3)
+      .channel_0_out(pokey2_ch0),
+      .channel_1_out(pokey2_ch1),
+      .channel_2_out(pokey2_ch2),
+      .channel_3_out(pokey2_ch3)
    );
    wire [5:0] pokey2_audio = pokey2_ch0 + pokey2_ch1 + pokey2_ch2 + pokey2_ch3;
    wire [6:0] pokey_mux = pokey_audio + pokey2_audio;
