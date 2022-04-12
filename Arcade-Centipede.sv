@@ -241,6 +241,8 @@ wire        forced_scandoubler;
 wire			video_rotated;
 wire        direct_video;
 
+wire        milliped  = core_mod[0];
+
 wire        ioctl_download;
 wire        ioctl_upload;
 wire        ioctl_upload_req;
@@ -252,6 +254,8 @@ wire  [7:0] ioctl_din;
 
 wire [15:0] joystick_0, joystick_1;
 wire [15:0] joy = joystick_0 | joystick_1;
+
+wire  [7:0] core_mod;
 
 wire [24:0] ps2_mouse;
 
@@ -324,7 +328,7 @@ pause #(3,3,3,24) pause (
 
 // DIPS
 
-reg [7:0] sw[8];
+reg [23:0] sw[24]; // millipede has lots of switches
 always @(posedge clk_sys)
 begin
 	if (ioctl_wr && (ioctl_index==8'd254) && !ioctl_addr[24:3]) sw[ioctl_addr[2:0]] <= ioctl_dout;
@@ -428,6 +432,7 @@ wire clk_6_o;
    centipede uut(
 		 .clk_12mhz(clk_12),
  		 .reset(reset),
+		 .milli(milliped),
 		 .playerinput_i(playerinput_i),
 		 .trakball_i(trakball_i),
 		 .flip_o(flip),

@@ -21,12 +21,13 @@ module centipede(
 		input         clk_12mhz,
 		input         reset,
 		input         pause,
+		input         milli,
 		input [9:0]   playerinput_i,
 		input [7:0]   trakball_i,
 		output        flip_o,
 		input [7:0]   joystick_i,
 		input [7:0]   sw1_i,
-		input [7:0]   sw2_i,
+		input [23:0]   sw2_i,
 		input  [15:0] dn_addr,
 		input  [7:0]  dn_data,
 		input					dn_wr,
@@ -58,16 +59,16 @@ module centipede(
 	 reg 	phi0a, phi0a_temp;
 
 	 //
-	 wire rom_n;
-	 wire ram0_n;
-	 wire steerclr_n, watchdog_n, out0_n, irqres_n;
-	 wire pokey_n, swrd_n, pf_n;
-	 wire coloram_n, ea_read_n, ea_ctrl_n, ea_addr_n;
-	 wire in0_n, in1_n;
+	 reg rom_n;
+	 reg ram0_n;
+	 reg steerclr_n, watchdog_n, out0_n, irqres_n;
+	 reg pokey_n, pokey2_n, swrd_n, pf_n;
+	 reg coloram_n, ea_read_n, ea_ctrl_n, ea_addr_n;
+	 reg in0_n, in1_n;
 
-	 wire pframrd_n;
-	 wire pfwr3_n, pfwr2_n, pfwr1_n, pfwr0_n;
-	 wire pfrd3_n, pfrd2_n, pfrd1_n, pfrd0_n;
+	 reg pframrd_n;
+	 reg pfwr3_n, pfwr2_n, pfwr1_n, pfwr0_n;
+	 reg pfrd3_n, pfrd2_n, pfrd1_n, pfrd0_n;
 
 	 wire [9:0] adecode;
 	 wire       pac_n;
@@ -157,23 +158,17 @@ module centipede(
 	 wire [7:0]  pf_rom1_out, pf_rom0_out;
 	 wire [7:0]  pf_rom1_out_rev, pf_rom0_out_rev;
 
-	 reg [7:0]   pic;
-
+	 reg [7:0]   pic, picD;
 	 
 	 reg 	       hs;
 	 wire        hs_set;
 	 //
 	 wire        comp_sync;
-	 reg [3:0]   rgbi;
-	 wire [3:0]  coloram_out;
-	 wire [3:0]  coloram_rgbi;
+	 reg [7:0]   rgbi;
+	 wire [7:0]  coloram_out;
+	 wire [7:0]  coloram_rgbi;
 	 wire        coloram_w_n;
 	 reg 	       coloren, coloren_temp;
-
-	 wire [1:0]  rama_sel;
-	 wire [1:0]  rama_hi;
-	 wire [1:0]  rama_lo;
-	 wire [3:0]  rama;
 
 	 wire [5:0]  audio;
 
@@ -188,12 +183,14 @@ module centipede(
 
 	 wire [7:0]  switch_out;
 	 wire        flip;
-
+	 wire        cntrlsel;
 	 wire        coin_ctr_r_drive, coin_ctr_c_drive, coin_ctr_l_drive;
 	 wire [7:0]  playerin_out;
 
 	 wire [7:0]  pokey_out;
-	 wire [3:0] pokey_ch0, pokey_ch1, pokey_ch2, pokey_ch3; 
+	 wire [7:0]  pokey2_out;
+	 wire [3:0]  pokey_ch0, pokey_ch1, pokey_ch2, pokey_ch3; 
+	 wire [3:0]  pokey2_ch0, pokey2_ch1, pokey2_ch2, pokey2_ch3;
  
 	 // ------------------------------------------------------------------------
 
@@ -202,7 +199,7 @@ module centipede(
 	 reg [7:0]   v_counter;
 	 wire        v_counter_reset;
 	
-	 always @(posedge s_12mhz or posedge reset)
+	 always @(posedge s_12mhz or posedge reset) // ??? Mist removed 'or posedge reset'
 		 if (reset)
 			 h_counter <= 12'b1101_0000_0000;
 		 else
@@ -232,7 +229,7 @@ module centipede(
 
 	 assign v_counter_reset = reset | vreset_n == 0;
 
-	 always @(posedge s_256h_n or posedge reset)
+	 always @(posedge s_256h_n or posedge reset)  // ??? Mist removed 'or posedge reset'
 		 if (reset)
 			 v_counter <= 0;
 		 else
@@ -250,6 +247,9 @@ module centipede(
 	 assign s_32v  = v_counter[5];
 	 assign s_64v  = v_counter[6];
 	 assign s_128v = v_counter[7];
+	 
+	 assign mob_n = ~((s_256h_n & s_256hd) | (s_256h2d_n & s_256hd)) | milli;
+	 assign blank_clk = ~s_12mhz & (h_counter[3:0] == 4'b1111);
 
 	 assign vprom_addr = {vblank, s_128v, s_64v, s_32v, s_8v, s_4v, s_2v, s_1v};
 
@@ -333,6 +333,7 @@ module centipede(
 	 assign hblank = ~hblank_n;
 
 	/*
+		Centipede ROMs
 		136001-407.d1	2048	0		0000 0000 00000000 prog_rom_1
 	136001-408.e1	2048	2048		0000 1000 00000000 prog_rom_1
 	136001-409.fh1	2048	4096		0001 0000 00000000 prog_rom_1
@@ -458,7 +459,7 @@ module centipede(
 	 // Address Decoder
 	assign write_n = ~(phi2 & ~rw_n);
 	assign brw_n = ~rw_n;
-	assign rom_n = brw_n | ~ab[13];
+	//assign rom_n = brw_n | ~ab[13];
 
 	//   1111 11
 	//   5432 1098 7654 3210
@@ -480,47 +481,95 @@ module centipede(
 		10'b1111111111;
 
 	wire write2_n = ~(s_6mhz & ~write_n);
-
-	assign steerclr_n = adecode[9] | write2_n;
-	assign watchdog_n = adecode[8] | write2_n;
-	assign out0_n =     adecode[7] | write2_n;
-	assign irqres_n =  (adecode[6] | write2_n) & mpu_reset_n;
-	assign coloram_n = (adecode[5] | ab[9]) /* | pac_n*/;
-	assign pokey_n = adecode[4];
-	assign in0_n =   adecode[3] | ab[1];
-	assign in1_n =   adecode[3] | ~ab[1];
-	assign swrd_n =  adecode[2];
-	assign pf_n =    adecode[1];
-	assign ram0_n =  adecode[0];
 	
-	wire C5 = ~ab[9]|adecode[5];
+	  // For millipede
+   wire   mos_n = ab[14:12] != 3'b000;
+   wire   io_n  = ab[14:12] != 3'b010;
+   wire   inputs_n  = {io_n, ab[11:10]} != 3'b000;
+   wire   outputs_n = {io_n, ab[11:10]} != 3'b001;
 
-	assign {ea_read_n, ea_ctrl_n, ea_addr_n} =
-					({C5, ab[8:7]} == 3'b000) ? 3'b110 :
-					({C5, ab[8:7]} == 3'b001) ? 3'b101 :
-					({C5, ab[8:7]} == 3'b010) ? 3'b011 :
-					3'b111;
-	 assign pframrd_n = pf_n | brw_n;
-	 
-	 assign {pfwr3_n, pfwr2_n, pfwr1_n, pfwr0_n} =
+   always @(*) begin
+      if (milli) begin
+         rom_n = brw_n | ~ab[14];
+
+         steerclr_n = 1; // adecode[9] | write2_n;
+
+         in0_n =     {inputs_n, ab[5:4]} != 3'b000;
+         in1_n =     {inputs_n, ab[5:4]} != 3'b001;
+         ea_read_n = {inputs_n, ab[5:4]} != 3'b011;
+
+         swrd_n   = 1;//adecode[2];
+         pf_n     = ab[14:12] != 3'b001; // _scram
+         ram0_n   = {mos_n, ab[11:10]} != 3'b000;
+         pokey_n  = {mos_n, ab[11:10]} != 3'b001;
+         pokey2_n = {mos_n, ab[11:10]} != 3'b010;
+
+         coloram_n  = {outputs_n | write_n, ab[9:7]} != 4'b0001;
+         out0_n     = {outputs_n | write_n, ab[9:7]} != 4'b0010;
+         irqres_n   = {outputs_n | write_n, ab[9:7]} != 4'b0100 & mpu_reset_n;
+         watchdog_n = {outputs_n | write_n, ab[9:7]} != 4'b0101;
+         ea_ctrl_n  = {outputs_n | write_n, ab[9:7]} != 4'b0110;
+         ea_addr_n  = {outputs_n | write_n, ab[9:7]} != 4'b0111;
+
+         pframrd_n = pf_n | brw_n;
+	
+	      {pfwr3_n, pfwr2_n, pfwr1_n, pfwr0_n} =
 					({pf_n, write_n, ab[5:4]} == 4'b0000) ? 4'b1110 :
 					({pf_n, write_n, ab[5:4]} == 4'b0001) ? 4'b1101 :
 					({pf_n, write_n, ab[5:4]} == 4'b0010) ? 4'b1011 :
 					({pf_n, write_n, ab[5:4]} == 4'b0011) ? 4'b0111 :
 					4'b1111;
 
-	 assign {pfrd3_n, pfrd2_n, pfrd1_n, pfrd0_n} =
+         {pfrd3_n, pfrd2_n, pfrd1_n, pfrd0_n} =
 						(ab[5:4] == 2'b00) ? 4'b1110 :
 						(ab[5:4] == 2'b01) ? 4'b1101 :
 						(ab[5:4] == 2'b10) ? 4'b1011 :
 						(ab[5:4] == 2'b11) ? 4'b0111 :
 						4'b1111;
+      end else begin
+         rom_n = brw_n | ~ab[13];
 
-	 //
-	 assign mob_n = ~(s_256h_n & s_256hd) & ~(s_256h2d_n & s_256hd);
+         steerclr_n = adecode[9] | write2_n;
+         watchdog_n = adecode[8] | write2_n;
+         out0_n =     adecode[7] | write2_n;
+         irqres_n =  (adecode[6] | write2_n) & mpu_reset_n;
+	
+	      coloram_n = (adecode[5] | ab[9]) /* | pac_n*/;
+	      pokey_n = adecode[4];
+	      pokey2_n = 1; // adecode[3];
+	      in0_n =   adecode[3] | ab[1];
+	      in1_n =   adecode[3] | ~ab[1];
+	      swrd_n =  adecode[2];
+	      pf_n =    adecode[1];
+	      ram0_n =  adecode[0];
 
-	 assign blank_clk = ~s_12mhz & (h_counter[3:0] == 4'b1111);
+	      {ea_read_n, ea_ctrl_n, ea_addr_n} =
+					({~ab[9]|adecode[5], ab[8:7]} == 3'b000) ? 3'b110 :
+					({~ab[9]|adecode[5], ab[8:7]} == 3'b001) ? 3'b101 :
+					({~ab[9]|adecode[5], ab[8:7]} == 3'b010) ? 3'b011 :
+					3'b111;
+	      pframrd_n = pf_n | brw_n;
+	 
+	      {pfwr3_n, pfwr2_n, pfwr1_n, pfwr0_n} =
+					({pf_n, write_n, ab[5:4]} == 4'b0000) ? 4'b1110 :
+					({pf_n, write_n, ab[5:4]} == 4'b0001) ? 4'b1101 :
+					({pf_n, write_n, ab[5:4]} == 4'b0010) ? 4'b1011 :
+					({pf_n, write_n, ab[5:4]} == 4'b0011) ? 4'b0111 :
+					4'b1111;
 
+	      {pfrd3_n, pfrd2_n, pfrd1_n, pfrd0_n} =
+						(ab[5:4] == 2'b00) ? 4'b1110 :
+						(ab[5:4] == 2'b01) ? 4'b1101 :
+						(ab[5:4] == 2'b10) ? 4'b1011 :
+						(ab[5:4] == 2'b11) ? 4'b0111 :
+						4'b1111;
+		end
+	 end
+
+	 //assign mob_n = ~(s_256h_n & s_256hd) & ~(s_256h2d_n & s_256hd);
+	 //assign blank_clk = ~s_12mhz & (h_counter[3:0] == 4'b1111);
+
+	 // ??? mist code is 'always @(posedge s_12mhz)'
 	 always @(posedge blank_clk or posedge reset)
 		 if (reset)
 			 begin
@@ -528,7 +577,7 @@ module centipede(
 		s_256hd <= 1'b0;
 		vblankd <= 1'b0;
 			 end
-		 else
+		 else  // mist includes  if (h_counter[3:0] == 4'b1111)
 			 begin
 		s_256h2d <= s_256hd;
 		s_256hd <= s_256h;
@@ -587,11 +636,6 @@ module centipede(
 	 assign match_mux = s_256h ? { pic[0], s_4v, s_2v, s_1v } : match_sum_hold[3:0];
 
 	 assign match_n = match_sum_hold[5] & s_256h_n;
-
-	 assign mga = { match_mux[3] ^ (pic[7] & s_256h_n),
-			match_mux[2] ^ pic[7],
-			match_mux[1] ^ pic[7],
-			match_mux[0] ^ pic[7] };
 	 
 	 
 	 // motion objects (horizontal)
@@ -648,19 +692,13 @@ module centipede(
 	 assign line_ram_ctr_load = ~(pload_n | s_256h);
 	 assign line_ram_ctr_clr = ~(pload_n | ~(s_256h & s_256hd_n));
 	 
-	 always @(posedge s_6mhz)
+	 always @(posedge s_6mhz) // ??? Mist uses s_12mhz here
 		 if (reset)
 			 line_ram_ctr <= 0;
-		 else
-			 begin
-		if (line_ram_ctr_clr)
-			line_ram_ctr <= 0;
-		else
-			if (line_ram_ctr_load) 
-				line_ram_ctr <= pfd_hold[23:16];
-			else
-				line_ram_ctr <= line_ram_ctr + 8'b1;
-			 end
+		 else // ??? Mist adds 'if (s_6mhz_en)'
+			if (line_ram_ctr_clr)
+				line_ram_ctr <= 0;
+		              
 	 
 	 assign line_ram_addr = line_ram_ctr;
 
@@ -678,9 +716,12 @@ module centipede(
 			 gry <= 0;
 		 else
 			 if (~mob_n)
-	 gry <= 2'b00;
-			 else
-	 gry <= mr;
+				 gry <= 2'b00;
+						 else
+				 gry <= mr;
+	 
+	  reg  [1:0] mocb, mocb_o;
+     wire [1:0] mocbx;
 
 	 
 	 //  playfield multiplexer
@@ -697,11 +738,11 @@ module centipede(
 	 // These signals then select which bits of the data PFD0-PFD31 are send out via K6, L6
 	 // M6, and N6 for the playfield codes that eventually are displayed on the monitor.
 
-//   always @(posedge s_4h)
-//     if (reset)
-//       pic <= 0;
-//     else
-//       pic <= pf[7:0];
+	//   always @(posedge s_4h)
+	//     if (reset)
+	//       pic <= 0;
+	//     else
+	//       pic <= pf[7:0];
 
 	 always @(negedge s_6mhz)
 		 if (reset)
@@ -748,7 +789,7 @@ module centipede(
 			
 	 // a guess, based on millipede schematics
 	 wire pf_romx_haddr;
-	 assign pf_romx_haddr = s_256h_n & pic[0];
+	 assign pf_romx_haddr = milli ? mga10 : s_256h_n & pic[0];
 
 	 assign pf_rom1_addr = { pf_romx_haddr, s_256h, pic[5:1], mga };
 	 assign pf_rom0_addr = { pf_romx_haddr, s_256h, pic[5:1], mga };
@@ -763,9 +804,10 @@ module centipede(
 	 assign pf_rom1_out_rev = { pf_rom1_out[0], pf_rom1_out[1], pf_rom1_out[2], pf_rom1_out[3],
 						pf_rom1_out[4], pf_rom1_out[5], pf_rom1_out[6], pf_rom1_out[7] };
 	 
-	 assign pf_mux0 = match_n ? 8'b0 : (pic[6] ? pf_rom0_out_rev : pf_rom0_out);
-	 assign pf_mux1 = match_n ? 8'b0 : (pic[6] ? pf_rom1_out_rev : pf_rom1_out);
+	 assign pf_mux0 = match_n ? 8'b0 : (horrot ? pf_rom0_out_rev : pf_rom0_out);
+	 assign pf_mux1 = match_n ? 8'b0 : (horrot ? pf_rom1_out_rev : pf_rom1_out);
 	 
+	 // ??? Mist uses 12mhz here
 	 always @(posedge s_6mhz)
 		 if (reset)
 			 pf_shift1 <= 0;
@@ -841,6 +883,8 @@ module centipede(
 			 pf_ce_d <= pf_ce;
 	 
 //   assign pf_ce4_n = { pf_ce_d, pf_ce_d, pf_ce_d, pf_ce_d };
+
+//   ??? Mist uses 12mhz here
 	 assign pf_ce4_n = 4'b0;
 	 pf_ram_dp pf_ram(
 				.clk_a(s_6mhz),
@@ -931,60 +975,75 @@ module centipede(
 	 assign js2_down = joystick_i[1];
 	 assign js2_up = joystick_i[0];
 
-	 assign joystick_out = ab[0] ?
+	 wire [7:0] joystick_out_centi = ab[0] ?
 			 { js1_right, js1_left, js1_down, js1_up, js2_right, js2_left, js2_down, js2_up } :
 			 { dir2, 3'b0, trb };
+			 
+	 wire [7:0] joystick_out_milli = {
+      ab[0] ? { self_test, 1'b0, cocktail, 1'b1 } : { coin_r, coin_l, coin_c, slam },
+      cntrlsel ? { js2_down, js2_up, js2_right, js2_left } : { js1_up, js1_down, js1_left, js1_right } };
+
+    assign joystick_out = milli ? joystick_out_milli : joystick_out_centi;
 	 
 	 // Option Input Circuitry
-
+	 
 	 assign switch_out = ab[0] ?
 					 sw2_i :
 					 sw1_i;
 
 	 // Player Input Circuitry
-	 wire coin_r, coin_c, coin_l, self_test;
-	 wire cocktail, slam, start1, start2, fire2, fire1;
-
-	 assign coin_r = playerinput_i[9];
-	 assign coin_c = playerinput_i[8];
-	 assign coin_l = playerinput_i[7];
-	 assign self_test = playerinput_i[6];
-	 assign cocktail = playerinput_i[5];
-	 assign slam = playerinput_i[4];
-	 assign start2 = playerinput_i[3];
-	 assign start1 = playerinput_i[2];
-	 assign fire2 = playerinput_i[1];
-	 assign fire1 = playerinput_i[0];
-
-	 wire [7:0] playerin_out0;
-	 wire [7:0] playerin_out1;
 	 
-	 assign playerin_out1 = { coin_r, coin_c, coin_l, slam, fire2, fire1, start2, start1 };
-	 assign playerin_out0 = { dir1, vblank, self_test, cocktail, tra };
+   wire coin_r, coin_c, coin_l, self_test;
+   wire cocktail, slam, start1, start2, fire2, fire1;
 
-	 assign playerin_out = ab[0] ? playerin_out1 : playerin_out0;
+   assign coin_r = coin_ctr_r_drive ? coin_ctr_r_drive : playerinput_i[9];
+   assign coin_c = coin_ctr_c_drive ? coin_ctr_c_drive : playerinput_i[8];
+   assign coin_l = coin_ctr_l_drive ? coin_ctr_l_drive : playerinput_i[7];
+   assign self_test = playerinput_i[6];
+   assign cocktail = playerinput_i[5];
+   assign slam = playerinput_i[4];
+   assign start2 = playerinput_i[3];
+   assign start1 = playerinput_i[2];
+   assign fire2 = playerinput_i[1];
+   assign fire1 = playerinput_i[0];
+
+   wire [7:0] playerin_out0;
+   wire [7:0] playerin_out1;
+
+   assign playerin_out1 = milli ? 
+      { dir2, 1'b0, start2, fire2, sw1_i[7:4] } :
+      { coin_r, coin_c, coin_l, slam, fire2, fire1, start2, start1 };
+
+   assign playerin_out0 = milli ?
+      { dir1, vblank, start1, fire1, sw1_i[3:0] } :
+      { dir1, vblank, self_test, cocktail, tra };
+
+   assign playerin_out = ab[0] ? playerin_out1 : playerin_out0;
 	 
 	 
 	 // Coin Counter Output
+	 
 	 reg [7:0] cc_latch;
 
-	 always @(posedge s_6mhz or posedge reset)
+	 always @(posedge s_6mhz or posedge reset) // Mist is 'posedge s_12mhz'
 		 if (reset)
 			 cc_latch <= 0;
 		 else
 			 if (~out0_n)
 				cc_latch[ ab[2:0] ] <= db_out[7];
 
-	 assign flip     = cc_latch[7];
-	 assign led_o[4] = cc_latch[6];
-	 assign led_o[3] = cc_latch[5];
-	 assign led_o[2] = cc_latch[4];
-	 assign led_o[1] = cc_latch[3];
-	 assign coin_ctr_r_drive = cc_latch[2];
-	 assign coin_ctr_c_drive = cc_latch[1];
-	 assign coin_ctr_l_drive = cc_latch[0];
+   assign flip     = milli ? cc_latch[6] : cc_latch[7];
+   assign cntrlsel = milli ? cc_latch[6] : 1'b0;
+   assign led_o[4] = milli ? 1'b0 : cc_latch[6];
+   assign led_o[3] = milli ? 1'b0 : cc_latch[5];
+   assign led_o[2] = cc_latch[4];
+   assign led_o[1] = cc_latch[3];
+   assign coin_ctr_r_drive = cc_latch[2];
+   assign coin_ctr_c_drive = cc_latch[1];
+   assign coin_ctr_l_drive = cc_latch[0]; // ??? Mist is cc_latch[1]
 	 
 	 // Mini-Trak Ball inputs
+	 
 	 wire [3:0] tb_mux;
 	 wire       s_1_horiz_dir, s_1_horiz_ck, s_1_vert_dir, s_1_vert_ck;
 	 wire       s_2_horiz_dir, s_2_horiz_ck, s_2_vert_dir, s_2_vert_ck;
@@ -1011,6 +1070,7 @@ module centipede(
 	 assign tb_v_dir = tb_mux[1];
 	 assign tb_v_ck = tb_mux[0];
 
+	 /* ??? this was commented out in Mist
 	 // H
 	 always @(posedge tb_h_ck or posedge reset)
 		 if (reset)
@@ -1046,6 +1106,7 @@ module centipede(
 	 tb_v_ctr <= tb_v_ctr + 4'd1;
 			 else
 	 tb_v_ctr <= tb_v_ctr - 4'd1;
+	 */
 
 	 assign tra = tb_h_ctr;
 	 assign trb = tb_v_ctr;
@@ -1053,42 +1114,16 @@ module centipede(
 	 assign dir2 = tb_v_reg;
 
 	 assign flip_o = flip;
-
 	 
-	 // Audio output circuitry
+    wire pic7 = milli ? !s_256h & pic[7] : pic[7];
+	 assign mga = { match_mux[3] ^ (pic7 & s_256h_n),
+		  match_mux[2] ^ pic7,
+		  match_mux[1] ^ pic7,
+		  match_mux[0] ^ pic7 };
 
-// `ifndef SIMULATION
-	pokey pokey(
-		.clk(phi2 && !pause),
-		.enable_179(1'b1),
-		.addr(ab[3:0]),
-		.data_in(db_out[7:0]),
-		.wr_en(~rw_n & ~pokey_n),
-		.reset_n(mpu_reset_n),
-		.data_out(pokey_out),
-		.channel_0_out(pokey_ch0),
-		.channel_1_out(pokey_ch1),
-		.channel_2_out(pokey_ch2),
-		.channel_3_out(pokey_ch3)
-	);
- 	assign audio = (pokey_ch0+pokey_ch1)+(pokey_ch2+pokey_ch3);
-// `endif
+    wire horrot = milli ? (!s_256h & pic[6]) : pic[6];
+    wire mga10 = s_256h ? pic[6] : pic[0];
 
-// `ifdef SIMULATION
-	// pokey pokey(
-	// 	.clk(phi2),
-	// 	.reset(~mpu_reset_n),
-	// 	.a(ab[3:0]),
-	// 	.cs0_n(1'b0),
-	// 	.cs1_n(pokey_n),
-	// 	.wren(~rw_n & ~pokey_n),
-	// 	.d_in(db_out[7:0]),
-	// 	.d_out(pokey_out),
-	// 	.p(),
-	// 	.aud(audio));
-// `endif
-
-	assign audio_o = {audio, 2'b0};
 
 	 //
 	 reg [7:0]  last_pokey_rd;
@@ -1133,48 +1168,102 @@ module centipede(
 //		 (rama_sel == 2'b11) ? { {gry0_or_1, 1'b1}, gry[1:0] } :
 //		 4'b0;
 
-	 assign rama =  gry0_or_1 ?
-			{ {gry0_or_1, 1'b1}, gry[1:0] } :
-			{ {gry0_or_1, 1'b1}, area[1:0] };
+//	 assign rama =  gry0_or_1 ?
+//			{ {gry0_or_1, 1'b1}, gry[1:0] } :
+//			{ {gry0_or_1, 1'b1}, area[1:0] };
+
+   wire [3:0] rama_centi =  gry0_or_1 ?
+      { {gry0_or_1, 1'b1}, gry[1:0] } :
+      { {gry0_or_1, 1'b1}, area[1:0] };
+
+   wire rama_hi_sel = (gry0_or_1 & s_256h & s_256h2d);
+   wire [4:0] rama_milli = {rama_hi_sel, rama_hi_sel ? {mocb, gry} : {picD[7:6], area}};
+
+   wire [4:0] rama = milli ? rama_milli : {1'b0, rama_centi};
+	wire [4:0] cram_a = milli ? ab[4:0] : {1'b0, ab[3:0]};
+
 	 
+	 // ??? Mist uses 12mhz here
 	 color_ram color_ram(.clk_a(s_6mhz),
 					 .clk_b(s_6mhz_n),
 					 .reset(reset),
-					 .addr_a(ab[3:0]),
+					 .addr_a(cram_a),
 					 .dout_a(coloram_out),
-					 .din_a(db_out[3:0]),
+					 .din_a(milli ? db_out : {db_out[3:0], db_out[3:0]}),
 					 .we_n_a(coloram_w_n),
-
 					 .addr_b(rama),
 					 .dout_b(coloram_rgbi));
 
 	 // output to the top level
 	 // bbb_ggg_rrr
-	 assign rgb_o =
-									rgbi == 4'b0000 ? 9'b100_111_111 :
-									rgbi == 4'b0001 ? 9'b100_111_000 :
-									rgbi == 4'b0010 ? 9'b100_000_111 :
-									rgbi == 4'b0011 ? 9'b100_000_000 :
-									rgbi == 4'b0100 ? 9'b000_100_111 :
-									rgbi == 4'b0101 ? 9'b000_100_000 :
-									rgbi == 4'b0110 ? 9'b000_000_111 :
-									rgbi == 4'b0111 ? 9'b000_000_000 :
-									rgbi == 4'b1000 ? 9'b111_111_111 :
-									rgbi == 4'b1001 ? 9'b111_111_000 :
-									rgbi == 4'b1010 ? 9'b111_000_111 :
-									rgbi == 4'b1011 ? 9'b111_000_000 :
-									rgbi == 4'b1100 ? 9'b000_111_111 :
-									rgbi == 4'b1101 ? 9'b000_111_000 :
-									rgbi == 4'b1110 ? 9'b000_000_111 :
-									rgbi == 4'b1111 ? 9'b000_000_000 :
-									0;
+   assign rgb_o = milli ? rgb_o_milli : rgb_o_centi;
+
+   wire [8:0] rgb_o_milli = ~{ rgbi[2:0], rgbi[4:3], 1'b1, rgbi[7:5] };
+   wire [8:0] rgb_o_centi = 
+		  rgbi[3:0] == 4'b0000 ? 9'b111_111_111 :
+		  rgbi[3:0] == 4'b0001 ? 9'b111_111_011 :
+		  rgbi[3:0] == 4'b0010 ? 9'b111_011_111 :
+		  rgbi[3:0] == 4'b0011 ? 9'b111_011_011 :
+		  rgbi[3:0] == 4'b0100 ? 9'b011_111_111 :
+		  rgbi[3:0] == 4'b0101 ? 9'b011_111_011 :
+		  rgbi[3:0] == 4'b0110 ? 9'b011_011_111 :
+		  rgbi[3:0] == 4'b0111 ? 9'b011_011_011 :
+		  rgbi[3:0] == 4'b1000 ? 9'b111_111_111 :
+		  rgbi[3:0] == 4'b1001 ? 9'b111_111_000 :
+		  rgbi[3:0] == 4'b1010 ? 9'b111_000_111 :
+		  rgbi[3:0] == 4'b1011 ? 9'b111_000_000 :
+		  rgbi[3:0] == 4'b1100 ? 9'b000_111_111 :
+		  rgbi[3:0] == 4'b1101 ? 9'b000_111_000 :
+		  rgbi[3:0] == 4'b1110 ? 9'b000_000_111 :
+		  rgbi[3:0] == 4'b1111 ? 9'b000_000_000 :
+		  0;
 
 	 assign sync_o = comp_sync;
 	 assign hsync_o = hsync;
 	 assign vsync_o = vsync;
 	 assign hblank_o = hblank;
-	 assign vblank_o = vblank;
+	 assign vblank_o = vblank; // ??? Mist uses vblankd here
 
 	 assign clk_6mhz_o = s_6mhz;
+	 
+	 
+	 // Audio output circuitry
+
+   pokey pokey(
+      .reset_n(mpu_reset_n), // was ~reset in Mist
+      .clk(phi2 && !pause), // was s_12mhz in Mist
+      .enable_179(1'b1), // was phi0_en in Mist
+      .data_in(db_out[7:0]),
+      .data_out(pokey_out),
+      .addr(ab[3:0]),
+      .wr_en(~rw_n & ~pokey_n), // written as ~(pokey_n | rw_n) in Mist
+      .pot_in(milli ? ~sw2_i[7:0] : 8'd0),
+      .channel_0_out(pokey_ch0),
+      .channel_1_out(pokey_ch1),
+      .channel_2_out(pokey_ch2),
+      .channel_3_out(pokey_ch3)
+   );
+	wire [5:0] pokey_audio = pokey_ch0 + pokey_ch1 + pokey_ch2 + pokey_ch3;
+
+   pokey pokey2(
+      .reset_n(mpu_reset_n), // was ~reset in Mist
+      .clk(phi2 && !pause), // was s_12mhz in Mist
+      .enable_179(1'b1), // was phi0_en in Mist
+      .data_in(db_out[7:0]),
+      .data_out(pokey_out),
+      .addr(ab[3:0]),
+      .wr_en(~rw_n & ~pokey_n), // written as ~(pokey_n | rw_n) in Mist
+      .pot_in(milli ? ~sw2_i[7:0] : 8'd0),
+      .channel_0_out(pokey_ch0),
+      .channel_1_out(pokey_ch1),
+      .channel_2_out(pokey_ch2),
+      .channel_3_out(pokey_ch3)
+   );
+   wire [5:0] pokey2_audio = pokey2_ch0 + pokey2_ch1 + pokey2_ch2 + pokey2_ch3;
+   wire [6:0] pokey_mux = pokey_audio + pokey2_audio;
+
+   assign audio = milli ? (pokey_mux[6] ? 6'h3f : pokey_mux[5:0]) : pokey_audio;
+	
+	assign audio_o = {audio, 2'b0};
 	 
 endmodule
