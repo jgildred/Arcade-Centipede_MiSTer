@@ -592,7 +592,7 @@ int main(int argc, char** argv, char** env) {
 	bus.QueueDownload("./roms/centiped/136001-212.hj7", 0, false);
 	bus.QueueDownload("./roms/centiped/136001-213.p4", 0, false);
 
-	bus.QueueDownload("./roms/earom", 4, true);
+	//bus.QueueDownload("./roms/earom", 4, true);
 
 #ifdef WIN32
 	MSG msg;
