@@ -584,13 +584,23 @@ int main(int argc, char** argv, char** env) {
 	// Setup video output
 	if (video.Initialise(windowTitle) == 1) { return 1; }
 
-	bus.QueueDownload("./roms/centiped/136001-407.d1", 0, false);
-	bus.QueueDownload("./roms/centiped/136001-408.e1", 0, false);
-	bus.QueueDownload("./roms/centiped/136001-409.fh1", 0, false);
-	bus.QueueDownload("./roms/centiped/136001-410.j1", 0, false);
-	bus.QueueDownload("./roms/centiped/136001-211.f7", 0, false);
-	bus.QueueDownload("./roms/centiped/136001-212.hj7", 0, false);
-	bus.QueueDownload("./roms/centiped/136001-213.p4", 0, false);
+	// centiped
+	//bus.QueueDownload("./roms/centiped/136001-407.d1", 0, false);
+	//bus.QueueDownload("./roms/centiped/136001-408.e1", 0, false);
+	//bus.QueueDownload("./roms/centiped/136001-409.fh1", 0, false);
+	//bus.QueueDownload("./roms/centiped/136001-410.j1", 0, false);
+	//bus.QueueDownload("./roms/centiped/136001-211.f7", 0, false);
+	//bus.QueueDownload("./roms/centiped/136001-212.hj7", 0, false);
+	//bus.QueueDownload("./roms/centiped/136001-213.p4", 0, false);
+
+	// milliped
+	bus.QueueDownload("./roms/milliped/136013-104.mn1", 0, false);
+	bus.QueueDownload("./roms/milliped/136013-103.l1", 0, false);
+	bus.QueueDownload("./roms/milliped/136013-102.jk1", 0, false);
+	bus.QueueDownload("./roms/milliped/136013-101.h1", 0, false);
+	bus.QueueDownload("./roms/milliped/136013-107.r5", 0, false);
+	bus.QueueDownload("./roms/milliped/136013-106.p5", 0, false);
+	bus.QueueDownload("./roms/milliped/136001-213.e7", 0, false);
 
 	//bus.QueueDownload("./roms/earom", 4, true);
 

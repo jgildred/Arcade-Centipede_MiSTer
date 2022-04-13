@@ -696,9 +696,15 @@ module centipede(
 		 if (reset)
 			 line_ram_ctr <= 0;
 		 else // ??? Mist adds 'if (s_6mhz_en)'
-			if (line_ram_ctr_clr)
-				line_ram_ctr <= 0;
-		              
+			begin
+				if (line_ram_ctr_clr)
+					line_ram_ctr <= 0;
+				else
+					if (line_ram_ctr_load) 
+						line_ram_ctr <= pfd_hold[23:16];
+					else
+						line_ram_ctr <= line_ram_ctr + 8'b1;
+			end              
 	 
 	 assign line_ram_addr = line_ram_ctr;
 
