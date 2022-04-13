@@ -44,7 +44,11 @@ module top(
 	// Hardcode default switches
 	//reg [7:0]  sw1 = 8'b01001100; // 5 lives
 	reg [7:0]  sw1 = 8'b01000000; // 2 lives
-	reg [7:0]  sw2 = 8'h02;
+	reg [23:0]  sw2 = 8'h02;
+	
+	wire        milliped  = core_mod[0];
+	
+	wire  [7:0] core_mod;
 
 	 
 	// MAP INPUTS FROM SIM
@@ -104,6 +108,7 @@ pause #(3,3,3,24) pause (
 	centipede uut(
 		.clk_12mhz(clk_12),
  		.reset(reset),
+		.milli(milliped),
 		.playerinput_i(playerinput),
 		.trakball_i(trakball),
 		.joystick_i(joystick),

@@ -26,7 +26,7 @@ module centipede(
 		input [7:0]   trakball_i,
 		output        flip_o,
 		input [7:0]   joystick_i,
-		input [7:0]   sw1_i,
+		input [23:0]   sw1_i,
 		input [23:0]   sw2_i,
 		input  [15:0] dn_addr,
 		input  [7:0]  dn_data,
@@ -82,7 +82,7 @@ module centipede(
 
 	 wire [15:0] ab;
 	 
-	 wire [7:0] db_in;
+	 wire [23:0] db_in;
 	 wire [7:0] db_out;
 
 	 wire [7:0] ram_out;
@@ -181,7 +181,7 @@ module centipede(
 	 wire [3:0]  tra, trb;
 	 wire        dir1, dir2;
 
-	 wire [7:0]  switch_out;
+	 wire [23:0]  switch_out;
 	 wire        flip;
 	 wire        cntrlsel;
 	 wire        coin_ctr_r_drive, coin_ctr_c_drive, coin_ctr_l_drive;
@@ -832,7 +832,7 @@ module centipede(
 		 else
 			 area <= { pf_shift1[7], pf_shift0[7] };
 
-	 //
+	 // ??? need to make db_in 24 bits to accommodate switches?
 	 assign db_in =
 		 ~rom_n ? rom_out :
 		 ~ram0_n ? ram_out :
