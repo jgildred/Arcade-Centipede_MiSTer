@@ -53,7 +53,7 @@ module centipede(
 
 	 //
 	 wire s_12mhz;
-	 wire s_6mhz, s_6mhz_n;
+	 wire s_6mhz, s_6mhz_n, s_6mhz_n_en;
 
 	 wire phi0, phi2;
 	 reg 	phi0a, phi0a_temp;
@@ -101,7 +101,7 @@ module centipede(
 	 wire       s_1h, s_2h, s_4h, s_8h, s_16h, s_32h, s_64h, s_128h, s_256h;
 	 wire       s_1v, s_2v, s_4v, s_8v, s_16v, s_32v, s_64v, s_128v;
 
-	 wire       s_4h_n, s_256h_n;
+	 wire       s_4h_n, s_256h_n, s_4h_n_en;
 	 wire       s_256hd_n;
 	 wire       s_256h2d_n;
 	 wire	      vblankd_n;
@@ -135,8 +135,8 @@ module centipede(
 	 wire        pf_addr_stamp;
 
 	 wire [31:0] pfd;
-	 reg [29:16] pfd_hold;
-	 reg [29:16] pfd_hold2;
+	 reg [31:16] pfd_hold;
+	 reg [31:16] pfd_hold2;
 
 	 reg [1:0]   gry;
 	 wire [1:0]  y;
@@ -218,6 +218,9 @@ module centipede(
 	 assign s_64h  = h_counter[7];
 	 assign s_128h = h_counter[8];
 	 assign s_256h = h_counter[9];
+	 
+	 assign s_6mhz_n_en = h_counter[0];
+	 assign s_4h_n_en = h_counter[3:0] == 4'b1111;
 
 	 assign s_4h_n = ~s_4h;
 	 assign s_256h_n = ~s_256h;
@@ -487,6 +490,12 @@ module centipede(
    wire   io_n  = ab[14:12] != 3'b010;
    wire   inputs_n  = {io_n, ab[11:10]} != 3'b000;
    wire   outputs_n = {io_n, ab[11:10]} != 3'b001;
+	
+	// Set game mode
+	//always @(posedge clk_sys) 
+	//begin
+		// if (ioctl_wr && (ioctl_index==8'd1)) game_mode <= ioctl_dout[3:0];
+	//end
 
    always @(*) begin
       if (milli) begin
@@ -535,10 +544,13 @@ module centipede(
          irqres_n =  (adecode[6] | write2_n) & mpu_reset_n;
 	
 	      coloram_n = (adecode[5] | ab[9]) /* | pac_n*/;
+			
 	      pokey_n = adecode[4];
 	      pokey2_n = 1; // adecode[3];
+			
 	      in0_n =   adecode[3] | ab[1];
 	      in1_n =   adecode[3] | ~ab[1];
+			
 	      swrd_n =  adecode[2];
 	      pf_n =    adecode[1];
 	      ram0_n =  adecode[0];
@@ -565,6 +577,18 @@ module centipede(
 						4'b1111;
 		end
 	 end
+	 
+	 // ??? need to make db_in 24 bits to accommodate switches?
+	 assign db_in =
+		 ~rom_n ? rom_out :
+		 ~ram0_n ? ram_out :
+		 ~pframrd_n ? pf_out[7:0] :
+		 ~ea_read_n ? earom_out :
+		 ~in0_n ? playerin_out :
+		 ~in1_n ? joystick_out :
+		 ~swrd_n ? switch_out :
+		 ~pokey_n ? pokey_out :
+		 8'b0;
 
 	 //assign mob_n = ~(s_256h_n & s_256hd) & ~(s_256h2d_n & s_256hd);
 	 //assign blank_clk = ~s_12mhz & (h_counter[3:0] == 4'b1111);
@@ -588,327 +612,7 @@ module centipede(
 	 assign s_256hd_n = ~s_256hd;
 	 assign vblankd_n = ~vblankd;
 	 
-	 // motion objects (vertical)
-
-	 // the motion object circuitry (vertical) receives pf data and vertical inputs from the
-	 // sync generator circuitry to generate the vertical component of the motion object video. PFD8-
-	 // 15 from the playfield memory and 1v-128v from the sync generator are compared at F6 and H6.
-	 // The output is gated by A7 when a motion object is on one of the sixteen vertical lines and is
-	 // latched by E6 and AND gate B7.  A low on B7 pin 8 indicates the presence of a motion object on
-	 // one of the vertical lines during non-active video time.  The signal (MATCH) enables the multi-
-	 // plexers in the picture data circuitry.
-	 //
-	 // when 256h goes high, 1v,2v,4v and pic0 are selected. When 256h goes low,
-	 // the latched output of E6 is selected. The output if D7 is EXCLUSIVE OR gated at E7 and is
-	 // sent to the picture data selector circuitry as motion graphics address (MGA0-MGA3). The other
-	 // input to EXCLUSIVE OR gate E7 is PIC7 from the playfield code multiplexer circuitry. PIC7
-	 // when high causes the output of E7 to be complimented.  For example, if MGA0..3 are low,
-	 // pic7 causes MGA0..3 to go high.  This causes the motion object video to be inverted top
-	 // to bottom.
-
-	 // mga0..3 (motion graphics address) from the motion object circuitry,
-	 //  256h and 256h_n from the sync generator
-	 // pic0..5 represents the code for the object to be displayed
-	 // mga0..3 set on of 8 different combinations of the 8-line by
-	 //  8-bit blocks of picture video or the 16 line by 8 bit blocks of
-	 //  motion object video
-	 //
-	 // 256h when high selects the playfield picture color codes to be addressed.
-	 // 256h when low selects the motion object color codes to be addressed
-
-	 assign match_line = { s_128v, s_64v, s_32v, s_16v, s_8v, s_4v, s_2v, s_1v };
-	 assign match_sum = match_line + pfd[15:8];
-	 assign match_sum_top = ~(match_sum[7] & match_sum[6] & match_sum[5] & match_sum[4]);
-
-//   always @(posedge s_4h)
-//     if (reset)
-//      match_sum_hold <= 0;
-//     else
-//       match_sum_hold <= { match_sum_top, 1'b0, match_sum[3:0] };
-
-	 always @(negedge s_6mhz)
-		if (reset)
-			 match_sum_hold <= 0;
-		 else
-			 if (h_counter[3:1] == 3'b011)	// clock enable rising edge of s_4h
-			 match_sum_hold <= { match_sum_top, 1'b0, match_sum[3:0] };
-
-	 assign match_mux = s_256h ? { pic[0], s_4v, s_2v, s_1v } : match_sum_hold[3:0];
-
-	 assign match_n = match_sum_hold[5] & s_256h_n;
-	 
-	 
-	 // motion objects (horizontal)
-
-	 // the motion object circuitry (horizontal) receives playfield data and horizontal inputs from
-	 // the sync generator circuitry. pfd16..23 from the pf memory determine the horizontal
-	 // position of the motion object.  pfd24..29 from the pf memory determine the indirect
-	 // color of the motion object.   pfd16:23 are latched and loaded into the horizontal position
-	 // counter.
-
-//brad
-//    always @(posedge s_4h)
-//     if (reset)
-//       pfd_hold <= 0;
-//     else
-//       pfd_hold <= pfd[29:16];
-
-		always @(negedge s_6mhz)
-		if (reset)
-			 pfd_hold <= 0;
-		 else
-			 /* posedge s_4h */
-			 if (h_counter[3:1] == 3'b011)	// clock enable rising edge of s_4h
-	 pfd_hold <= pfd[29:16];
-
-//   always @(posedge s_4h_n)
-//     if (reset)
-//       pfd_hold2 <= 0;
-//     else
-//       pfd_hold2 <= pfd_hold;
-
-	 always @(negedge s_6mhz)
-		 if (reset)
-			 pfd_hold2 <= 0;
-		 else
-			 /* posedge s_4h_n */
-			 if (h_counter[3:1] == 3'b000)	// clock enable rising edge os s_4h_n
-		 pfd_hold2 <= pfd_hold;
-	 
-	 assign y[1] =
-		(area == 2'b00) ? (s_256hd ? 1'b0 : gry[1]) :
-		(area == 2'b01) ? (s_256hd ? 1'b0 : pfd_hold2[25]) : 
-		(area == 2'b10) ? (s_256hd ? 1'b0 : pfd_hold2[27]) :
-		(area == 2'b11) ? (s_256hd ? 1'b0 : pfd_hold2[29]) :
-		1'b0;
-
-	 assign y[0] =
-		(area == 2'b00) ? (s_256hd ? 1'b0 : gry[0]) :
-		(area == 2'b01) ? (s_256hd ? 1'b0 : pfd_hold2[24]) : 
-		(area == 2'b10) ? (s_256hd ? 1'b0 : pfd_hold2[26]) :
-		(area == 2'b11) ? (s_256hd ? 1'b0 : pfd_hold2[28]) :
-		1'b0;
-
-	 assign line_ram_ctr_load = ~(pload_n | s_256h);
-	 assign line_ram_ctr_clr = ~(pload_n | ~(s_256h & s_256hd_n));
-	 
-	 always @(posedge s_6mhz) // ??? Mist uses s_12mhz here
-		 if (reset)
-			 line_ram_ctr <= 0;
-		 else // ??? Mist adds 'if (s_6mhz_en)'
-			begin
-				if (line_ram_ctr_clr)
-					line_ram_ctr <= 0;
-				else
-					if (line_ram_ctr_load) 
-						line_ram_ctr <= pfd_hold[23:16];
-					else
-						line_ram_ctr <= line_ram_ctr + 8'b1;
-			end              
-	 
-	 assign line_ram_addr = line_ram_ctr;
-
-	 always @(posedge s_6mhz)
-		 line_ram[line_ram_addr] <= y;
-
-	 always @(posedge s_12mhz)
-		 if (reset)
-			 mr <= 0;
-		 else
-			 mr <= line_ram[line_ram_addr];
-	 
-	 always @(posedge s_6mhz_n)
-		 if (reset)
-			 gry <= 0;
-		 else
-			 if (~mob_n)
-				 gry <= 2'b00;
-						 else
-				 gry <= mr;
-	 
-	  reg  [1:0] mocb, mocb_o;
-     wire [1:0] mocbx;
-
-	 
-	 //  playfield multiplexer
-
-	 // The playfield multiplexer receives playfield data from the pf memory
-	 // (PFD0-PFD31) and the output (pf0..7) is a code that determines what is 1) dis-
-	 // played on the monitor or 2) read or updated by the MPU.
-	 //
-	 // When 256H is low and 4H is high, AB4 and AB5 from the MPU address bus is the
-	 // select output from P6.   The output is applied to multiplexers k6, l6, m6 and n6
-	 // as select inputs.  When the MPU is accessing the playfield code multiplexer, the
-	 // playfield data is either being read or updated by the MPU.  When 256H is high and 4H
-	 // is low, the inputs frmo the sync generator (128H and 8V) are the selected outputs.
-	 // These signals then select which bits of the data PFD0-PFD31 are send out via K6, L6
-	 // M6, and N6 for the playfield codes that eventually are displayed on the monitor.
-
-	//   always @(posedge s_4h)
-	//     if (reset)
-	//       pic <= 0;
-	//     else
-	//       pic <= pf[7:0];
-
-	 always @(negedge s_6mhz)
-		 if (reset)
-			 pic <= 0;
-		 else
-			if (h_counter[3:1] == 3'b011)		// clock enable rising edge of s_4h
-	 pic <= pf[7:0];
-
-
-	dpram #(11) pf_rom1
-	(
-				.clock_a(clk_12mhz),
-				.enable_a(1'b1),
-				.wren_a(dn_wr & prog_pf_rom_1_cs),
-				.address_a(dn_addr[10:0]),
-				.data_a(dn_data),
-				.q_a(),
-
-				.clock_b(clk_12mhz),
-				.enable_b(s_6mhz_n),
-				.address_b(pf_rom1_addr),
-				.wren_b(),
-				.data_b(),
-				.q_b(pf_rom1_out_raw)
-	 );
-
-	dpram #(11) pf_rom0
-	(
-				.clock_a(clk_12mhz),
-				.enable_a(1'b1),
-				.wren_a(dn_wr & prog_pf_rom_0_cs),
-				.address_a(dn_addr[10:0]),
-				.data_a(dn_data),
-				.q_a(),
-
-				.clock_b(clk_12mhz),
-				.enable_b(s_6mhz_n),
-				.address_b(pf_rom0_addr),
-				.wren_b(),
-				.data_b(),
-				.q_b(pf_rom0_out_raw)
-	 );
-			
-			
-	 // a guess, based on millipede schematics
-	 wire pf_romx_haddr;
-	 assign pf_romx_haddr = milli ? mga10 : s_256h_n & pic[0];
-
-	 assign pf_rom1_addr = { pf_romx_haddr, s_256h, pic[5:1], mga };
-	 assign pf_rom0_addr = { pf_romx_haddr, s_256h, pic[5:1], mga };
-
-
-	 assign pf_rom0_out = reset ? 8'b0 : pf_rom0_out_raw;
-	 assign pf_rom1_out = reset ? 8'b0 : pf_rom1_out_raw;
-
-	 assign pf_rom0_out_rev = { pf_rom0_out[0], pf_rom0_out[1], pf_rom0_out[2], pf_rom0_out[3],
-						pf_rom0_out[4], pf_rom0_out[5], pf_rom0_out[6], pf_rom0_out[7] };
-	 
-	 assign pf_rom1_out_rev = { pf_rom1_out[0], pf_rom1_out[1], pf_rom1_out[2], pf_rom1_out[3],
-						pf_rom1_out[4], pf_rom1_out[5], pf_rom1_out[6], pf_rom1_out[7] };
-	 
-	 assign pf_mux0 = match_n ? 8'b0 : (horrot ? pf_rom0_out_rev : pf_rom0_out);
-	 assign pf_mux1 = match_n ? 8'b0 : (horrot ? pf_rom1_out_rev : pf_rom1_out);
-	 
-	 // ??? Mist uses 12mhz here
-	 always @(posedge s_6mhz)
-		 if (reset)
-			 pf_shift1 <= 0;
-		 else
-			 if (~pload_n)
-	 pf_shift1 <= pf_mux1;
-			 else
-	 pf_shift1 <= { pf_shift1[6:0], 1'b0 };
-	 
-	 always @(posedge s_6mhz)
-		 if (reset)
-			 pf_shift0 <= 0;
-		 else
-			 if (~pload_n)
-	 pf_shift0 <= pf_mux0;
-			 else
-	 pf_shift0 <= { pf_shift0[6:0], 1'b0 };
-	 
-	 always @(posedge s_6mhz_n)
-		 if (reset)
-			 area <= 0;
-		 else
-			 area <= { pf_shift1[7], pf_shift0[7] };
-
-	 // ??? need to make db_in 24 bits to accommodate switches?
-	 assign db_in =
-		 ~rom_n ? rom_out :
-		 ~ram0_n ? ram_out :
-		 ~pframrd_n ? pf_out[7:0] :
-		 ~ea_read_n ? earom_out :
-		 ~in0_n ? playerin_out :
-		 ~in1_n ? joystick_out :
-		 ~swrd_n ? switch_out :
-		 ~pokey_n ? pokey_out :
-		 8'b0;
-
-	 // we ignore the cpu, as pf ram is now dp and cpu has it's own port
-	 assign pf_sel = pf_addr_stamp ? 2'b00 : { s_8v, s_128h };
-	 
-	 assign pf =
-				(pf_sel == 2'b00) ? pfd[7:0] :
-				(pf_sel == 2'b01) ? pfd[15:8] :
-				(pf_sel == 2'b10) ? pfd[23:16] :
-				(pf_sel == 2'b11) ? pfd[31:24] :
-				8'b0;
-
-	 // playfield address selector
-
-	 // when s_4h_n is low the pf addr selector receives 8h, 16, 32h & 64h and
-	 //  16v, 32v, 64v and 128v from the sync generator. these signals enable the sync
-	 //  generator circuits to access the playfield memory
-	 //
-	 // when s_4h_n goes high the game mpu addresses the pf memory
-	 // during horizontal blanking pfa4..7 are held high enabling the motion object
-	 // circuitry to access the playfield memory for the motion objects to be displayed
-
-	 assign pf_addr_stamp = s_256h_n & s_4h_n;
-
-	 // force pf address to "stamp area" during hblank
-	 assign pfa7654 = pf_addr_stamp ? 4'b1111 : { s_128v, s_64v, s_32v, s_16v };
-	 assign pfa3210 = { s_64h, s_32h, s_16h, s_8h };
-	 assign pfa = { pfa7654, pfa3210 };
-
-	 wire pf_ce;
-	 reg 	pf_ce_d;
-	 wire [3:0] pf_ce4_n;
-	 assign pf_ce = ~(s_1h & s_2h & s_4h & s_6mhz);
-
-	 always @(posedge s_12mhz)
-		 if (reset)
-			 pf_ce_d <= 0;
-		 else
-			 pf_ce_d <= pf_ce;
-	 
-//   assign pf_ce4_n = { pf_ce_d, pf_ce_d, pf_ce_d, pf_ce_d };
-
-//   ??? Mist uses 12mhz here
-	 assign pf_ce4_n = 4'b0;
-	 pf_ram_dp pf_ram(
-				.clk_a(s_6mhz),
-				.clk_b(s_6mhz/*_n*/),
-				.reset(reset),
-				//
-				.addr_a({ab[9:6], ab[3:0]}),
-				.din_a(db_out),
-				.dout_a(pf_out),
-				.ce_a({pfrd3_n, pfrd2_n, pfrd1_n, pfrd0_n}),
-				.we_a({pfwr3_n, pfwr2_n, pfwr1_n, pfwr0_n}),
-				//
-				.addr_b(pfa),
-				.dout_b(pfd),
-				.ce_b(pf_ce4_n)
-				);
-
-	// EAROM (top 3 high scores)
+	 	// EAROM (top 3 high scores)
 	reg [5:0]   earom_addr;
 	wire [7:0]  earom_out;
 	reg [7:0]   earom_in;
@@ -1075,7 +779,9 @@ module centipede(
 	 assign tb_h_ck = tb_mux[2];
 	 assign tb_v_dir = tb_mux[1];
 	 assign tb_v_ck = tb_mux[0];
-
+	 
+	 assign flip_o = flip;
+	 
 	 /* ??? this was commented out in Mist
 	 // H
 	 always @(posedge tb_h_ck or posedge reset)
@@ -1118,10 +824,52 @@ module centipede(
 	 assign trb = tb_v_ctr;
 	 assign dir1 = tb_h_reg;
 	 assign dir2 = tb_v_reg;
-
-	 assign flip_o = flip;
 	 
-    wire pic7 = milli ? !s_256h & pic[7] : pic[7];
+	 
+	 // motion objects (vertical)
+
+	 // the motion object circuitry (vertical) receives pf data and vertical inputs from the
+	 // sync generator circuitry to generate the vertical component of the motion object video. PFD8-
+	 // 15 from the playfield memory and 1v-128v from the sync generator are compared at F6 and H6.
+	 // The output is gated by A7 when a motion object is on one of the sixteen vertical lines and is
+	 // latched by E6 and AND gate B7.  A low on B7 pin 8 indicates the presence of a motion object on
+	 // one of the vertical lines during non-active video time.  The signal (MATCH) enables the multi-
+	 // plexers in the picture data circuitry.
+	 //
+	 // when 256h goes high, 1v,2v,4v and pic0 are selected. When 256h goes low,
+	 // the latched output of E6 is selected. The output if D7 is EXCLUSIVE OR gated at E7 and is
+	 // sent to the picture data selector circuitry as motion graphics address (MGA0-MGA3). The other
+	 // input to EXCLUSIVE OR gate E7 is PIC7 from the playfield code multiplexer circuitry. PIC7
+	 // when high causes the output of E7 to be complimented.  For example, if MGA0..3 are low,
+	 // pic7 causes MGA0..3 to go high.  This causes the motion object video to be inverted top
+	 // to bottom.
+
+	 // mga0..3 (motion graphics address) from the motion object circuitry,
+	 //  256h and 256h_n from the sync generator
+	 // pic0..5 represents the code for the object to be displayed
+	 // mga0..3 set on of 8 different combinations of the 8-line by
+	 //  8-bit blocks of picture video or the 16 line by 8 bit blocks of
+	 //  motion object video
+	 //
+	 // 256h when high selects the playfield picture color codes to be addressed.
+	 // 256h when low selects the motion object color codes to be addressed
+
+	 assign match_line = { s_128v, s_64v, s_32v, s_16v, s_8v, s_4v, s_2v, s_1v };
+	 assign match_sum = match_line + pfd[15:8];
+	 assign match_sum_top = ~(match_sum[7] & match_sum[6] & match_sum[5] & match_sum[4]);
+
+	 always @(negedge s_6mhz)
+		if (reset)
+			 match_sum_hold <= 0;
+		 else
+			 if (h_counter[3:1] == 3'b011)	// clock enable rising edge of s_4h
+			 match_sum_hold <= { match_sum_top, 1'b0, match_sum[3:0] };
+
+	 assign match_mux = s_256h ? { pic[0], s_4v, s_2v, s_1v } : match_sum_hold[3:0];
+
+	 assign match_n = match_sum_hold[5] & s_256h_n;
+	 
+	 wire pic7 = milli ? !s_256h & pic[7] : pic[7];
 	 assign mga = { match_mux[3] ^ (pic7 & s_256h_n),
 		  match_mux[2] ^ pic7,
 		  match_mux[1] ^ pic7,
@@ -1129,16 +877,298 @@ module centipede(
 
     wire horrot = milli ? (!s_256h & pic[6]) : pic[6];
     wire mga10 = s_256h ? pic[6] : pic[0];
+	 
+	 
+	 // motion objects (horizontal)
 
+	 // the motion object circuitry (horizontal) receives playfield data and horizontal inputs from
+	 // the sync generator circuitry. pfd16..23 from the pf memory determine the horizontal
+	 // position of the motion object.  pfd24..29 from the pf memory determine the indirect
+	 // color of the motion object.   pfd16:23 are latched and loaded into the horizontal position
+	 // counter.
 
+//brad
+//    always @(posedge s_4h)
+//     if (reset)
+//       pfd_hold <= 0;
+//     else
+//       pfd_hold <= pfd[29:16];
+
+		always @(negedge s_6mhz) // ??? mist uses posedge s_12mhz
+		if (reset)
+			 pfd_hold <= 0;
+		 else
+			 /* posedge s_4h,  ??? mist says if (s_4h_en) */
+			 if (h_counter[3:1] == 3'b011)	// clock enable rising edge of s_4h
+				pfd_hold <= pfd[29:16]; // ??? mist uses pfd[31:16]
+
+//   always @(posedge s_4h_n)
+//     if (reset)
+//       pfd_hold2 <= 0;
+//     else
+//       pfd_hold2 <= pfd_hold;
+
+	 always @(negedge s_6mhz) // ??? mist uses posedge s_12mhz
+		 if (reset)
+			 pfd_hold2 <= 0;
+		 else
+			 /* posedge s_4h_n, ??? mist says if (s_4h_n_en) */
+			 if (h_counter[3:1] == 3'b000)	// clock enable rising edge os s_4h_n
+		 pfd_hold2 <= pfd_hold;
+	 
+	 assign y[1] = // C7
+		(area == 2'b00) ? (s_256hd ? 1'b0 : gry[1]) :
+		(area == 2'b01) ? (s_256hd ? 1'b0 : pfd_hold2[25]) : 
+		(area == 2'b10) ? (s_256hd ? 1'b0 : pfd_hold2[27]) :
+		(area == 2'b11) ? (s_256hd ? 1'b0 : pfd_hold2[29]) :
+		1'b0;
+
+	 assign y[0] = // C7
+		(area == 2'b00) ? (s_256hd ? 1'b0 : gry[0]) :
+		(area == 2'b01) ? (s_256hd ? 1'b0 : pfd_hold2[24]) : 
+		(area == 2'b10) ? (s_256hd ? 1'b0 : pfd_hold2[26]) :
+		(area == 2'b11) ? (s_256hd ? 1'b0 : pfd_hold2[28]) :
+		1'b0;
+		
+	 assign mocbx[0] = (area == 2'b00) ? (s_256hd ? 1'b0 : mocb[0]) : pfd_hold2[30];
+    assign mocbx[1] = (area == 2'b00) ? (s_256hd ? 1'b0 : mocb[1]) : pfd_hold2[31];
+
+	 assign line_ram_ctr_load = ~(pload_n | s_256h);
+	 assign line_ram_ctr_clr = ~(pload_n | ~(s_256h & s_256hd_n));
+	 
+	 always @(posedge s_6mhz) // ??? Mist uses s_12mhz here
+		 if (reset)
+			 line_ram_ctr <= 0;
+		 else // ??? Mist adds 'if (s_6mhz_en)'
+			begin
+				if (line_ram_ctr_clr)
+					line_ram_ctr <= 0;
+				else
+					if (line_ram_ctr_load) 
+						line_ram_ctr <= pfd_hold[23:16];
+					else
+						line_ram_ctr <= line_ram_ctr + 8'b1;
+			end              
+	 
+	 assign line_ram_addr = line_ram_ctr;
+	 
+	 // previous mister code
+	 //always @(posedge s_6mhz)
+	 //  line_ram[line_ram_addr] <= y;
+	 
+	 // from mist
+	 always @(posedge s_12mhz)
+     if (~s_6mhz) line_ram[line_ram_addr] <= {mocbx, y};
+
+	 // previous mister code
+	 //always @(posedge s_12mhz)
+	 //	 if (reset)
+	 //		 mr <= 0;
+	 //	 else
+	 //		 mr <= line_ram[line_ram_addr];
+			
+	 // from mist	
+	 always @(negedge s_12mhz)
+     if (reset) begin
+       mr <= 0;
+       mocb_o <= 0;
+     end else
+       {mocb_o, mr} <= line_ram[line_ram_addr];
+		 
+	 reg  [1:0] mocb, mocb_o;
+    wire [1:0] mocbx;
+	 
+	 //always @(posedge s_6mhz_n)
+		// if (reset)
+		//	 gry <= 0;
+		// else
+		//	 if (~mob_n)
+		//		 gry <= 2'b00;
+		//				 else
+		//		 gry <= mr;
+		
+	 always @(posedge s_12mhz, negedge mob_n)
+      if (~mob_n)
+         gry <= 2'b00;
+      else if (s_6mhz_n_en) begin
+         gry <= mr;
+         mocb <= mocb_o;
+      end
+
+	 
+	 //  playfield multiplexer
+
+	 // The playfield multiplexer receives playfield data from the pf memory
+	 // (PFD0-PFD31) and the output (pf0..7) is a code that determines what is 1) dis-
+	 // played on the monitor or 2) read or updated by the MPU.
 	 //
-	 reg [7:0]  last_pokey_rd;
+	 // When 256H is low and 4H is high, AB4 and AB5 from the MPU address bus is the
+	 // select output from P6.   The output is applied to multiplexers k6, l6, m6 and n6
+	 // as select inputs.  When the MPU is accessing the playfield code multiplexer, the
+	 // playfield data is either being read or updated by the MPU.  When 256H is high and 4H
+	 // is low, the inputs frmo the sync generator (128H and 8V) are the selected outputs.
+	 // These signals then select which bits of the data PFD0-PFD31 are send out via K6, L6
+	 // M6, and N6 for the playfield codes that eventually are displayed on the monitor.
+
+	//   always @(posedge s_4h)
+	//     if (reset)
+	//       pic <= 0;
+	//     else
+	//       pic <= pf[7:0];
+
+	 always @(negedge s_6mhz)
+		 if (reset)
+			 pic <= 0;
+		 else
+			if (h_counter[3:1] == 3'b011)		// clock enable rising edge of s_4h
+	        pic <= pf[7:0];
+			  else if (s_4h_n_en) // from mist
+         picD <= pic;          // from mist
+
+			
+		
+	// ??? this interface is very different from mist version
+	dpram #(11) pf_rom1
+	(
+				.clock_a(clk_12mhz),
+				.enable_a(1'b1),
+				.wren_a(dn_wr & prog_pf_rom_1_cs),
+				.address_a(dn_addr[10:0]),
+				.data_a(dn_data),
+				.q_a(),
+
+				.clock_b(clk_12mhz),
+				.enable_b(s_6mhz_n),
+				.address_b(pf_rom1_addr),
+				.wren_b(),
+				.data_b(),
+				.q_b(pf_rom1_out_raw)
+	 );
+
+	// ??? this interface is very different from mist version
+	dpram #(11) pf_rom0
+	(
+				.clock_a(clk_12mhz),
+				.enable_a(1'b1),
+				.wren_a(dn_wr & prog_pf_rom_0_cs),
+				.address_a(dn_addr[10:0]),
+				.data_a(dn_data),
+				.q_a(),
+
+				.clock_b(clk_12mhz),
+				.enable_b(s_6mhz_n),
+				.address_b(pf_rom0_addr),
+				.wren_b(),
+				.data_b(),
+				.q_b(pf_rom0_out_raw)
+	 );
+			
+			
+	 // a guess, based on millipede schematics
+	 wire pf_romx_haddr;
+	 assign pf_romx_haddr = milli ? mga10 : s_256h_n & pic[0];
+
+	 assign pf_rom1_addr = { pf_romx_haddr, s_256h, pic[5:1], mga };
+	 assign pf_rom0_addr = { pf_romx_haddr, s_256h, pic[5:1], mga };
+
+
+	 assign pf_rom0_out = reset ? 8'b0 : pf_rom0_out_raw;
+	 assign pf_rom1_out = reset ? 8'b0 : pf_rom1_out_raw;
+
+	 assign pf_rom0_out_rev = { pf_rom0_out[0], pf_rom0_out[1], pf_rom0_out[2], pf_rom0_out[3],
+						pf_rom0_out[4], pf_rom0_out[5], pf_rom0_out[6], pf_rom0_out[7] };
+	 
+	 assign pf_rom1_out_rev = { pf_rom1_out[0], pf_rom1_out[1], pf_rom1_out[2], pf_rom1_out[3],
+						pf_rom1_out[4], pf_rom1_out[5], pf_rom1_out[6], pf_rom1_out[7] };
+	 
+	 assign pf_mux0 = match_n ? 8'b0 : (horrot ? pf_rom0_out_rev : pf_rom0_out);
+	 assign pf_mux1 = match_n ? 8'b0 : (horrot ? pf_rom1_out_rev : pf_rom1_out);
+	 
+	 // ??? Mist uses 12mhz here
 	 always @(posedge s_6mhz)
 		 if (reset)
-			 last_pokey_rd <= 0;
+			 pf_shift1 <= 0;
 		 else
-			 if (~pokey_n)
-	 last_pokey_rd <= pokey_out;
+			 if (~pload_n)
+				pf_shift1 <= pf_mux1;
+			 else
+				pf_shift1 <= { pf_shift1[6:0], 1'b0 };
+	 
+	 always @(posedge s_6mhz)
+		 if (reset)
+			 pf_shift0 <= 0;
+		 else
+			 if (~pload_n)
+	 pf_shift0 <= pf_mux0;
+			 else
+	 pf_shift0 <= { pf_shift0[6:0], 1'b0 };
+	 
+	 always @(posedge s_6mhz_n)
+		 if (reset)
+			 area <= 0;
+		 else
+			 area <= { pf_shift1[7], pf_shift0[7] };
+
+	 // we ignore the cpu, as pf ram is now dp and cpu has it's own port
+	 assign pf_sel = pf_addr_stamp ? 2'b00 : { s_8v, s_128h };
+	 
+	 assign pf =
+				(pf_sel == 2'b00) ? pfd[7:0] :
+				(pf_sel == 2'b01) ? pfd[15:8] :
+				(pf_sel == 2'b10) ? pfd[23:16] :
+				(pf_sel == 2'b11) ? pfd[31:24] :
+				8'b0;
+
+	 // playfield address selector
+
+	 // when s_4h_n is low the pf addr selector receives 8h, 16, 32h & 64h and
+	 //  16v, 32v, 64v and 128v from the sync generator. these signals enable the sync
+	 //  generator circuits to access the playfield memory
+	 //
+	 // when s_4h_n goes high the game mpu addresses the pf memory
+	 // during horizontal blanking pfa4..7 are held high enabling the motion object
+	 // circuitry to access the playfield memory for the motion objects to be displayed
+
+	 // ??? mist is assign pf_addr_stamp = hblank & ~s_256h;
+	 assign pf_addr_stamp = s_256h_n & s_4h_n;
+
+	 // force pf address to "stamp area" during hblank
+	 assign pfa7654 = pf_addr_stamp ? 4'b1111 : { s_128v, s_64v, s_32v, s_16v };
+	 assign pfa3210 = { s_64h, s_32h, s_16h, s_8h };
+	 assign pfa = { pfa7654, pfa3210 };
+
+	 wire pf_ce;
+	 reg 	pf_ce_d;
+	 wire [3:0] pf_ce4_n;
+	 assign pf_ce = ~(s_1h & s_2h & s_4h & s_6mhz);
+
+	 // ??? mist does not have this
+	 always @(posedge s_12mhz)
+		 if (reset)
+			 pf_ce_d <= 0;
+		 else
+			 pf_ce_d <= pf_ce;
+	 
+	 //   assign pf_ce4_n = { pf_ce_d, pf_ce_d, pf_ce_d, pf_ce_d };
+	 assign pf_ce4_n = 4'b0;
+
+	 //   ??? Mist uses 12mhz here
+	 pf_ram_dp pf_ram(
+				.clk_a(s_6mhz),
+				.clk_b(s_6mhz/*_n*/),
+				.reset(reset),
+				//
+				.addr_a({ab[9:6], ab[3:0]}),
+				.din_a(db_out),
+				.dout_a(pf_out),
+				.ce_a({pfrd3_n, pfrd2_n, pfrd1_n, pfrd0_n}),
+				.we_a({pfwr3_n, pfwr2_n, pfwr1_n, pfwr0_n}),
+				//
+				.addr_b(pfa),
+				.dout_b(pfd),
+				.ce_b(pf_ce4_n)
+				);
+	 
  
 	 // Video output circuitry
 
@@ -1155,9 +1185,9 @@ module centipede(
 	 always @(posedge s_6mhz_n)
 		 if (reset)
 			 rgbi <= 4'b1111;		// output is inverted
-		else if (~blank_disp_n)
+		else if (~blank_disp_n) 
 			rgbi <= 4'b1111;
-			else
+			else     // mist has else if (s_6mhz_n_en)
 			 rgbi <= coloram_rgbi;
 
 	 assign coloram_w_n = write_n | coloram_n;
@@ -1189,19 +1219,21 @@ module centipede(
 	wire [4:0] cram_a = milli ? ab[4:0] : {1'b0, ab[3:0]};
 
 	 
-	 // ??? Mist uses 12mhz here
-	 color_ram color_ram(.clk_a(s_6mhz),
-					 .clk_b(s_6mhz_n),
-					 .reset(reset),
-					 .addr_a(cram_a),
-					 .dout_a(coloram_out),
-					 .din_a(milli ? db_out : {db_out[3:0], db_out[3:0]}),
-					 .we_n_a(coloram_w_n),
-					 .addr_b(rama),
-					 .dout_b(coloram_rgbi));
+	// ??? Mist uses 12mhz here
+	color_ram color_ram(
+		 .clk_a(s_6mhz),
+		 .clk_b(s_6mhz_n),
+		 .reset(reset),
+		 .addr_a(cram_a),
+		 .dout_a(coloram_out),
+		 .din_a(milli ? db_out : {db_out[3:0], db_out[3:0]}),
+		 .we_n_a(coloram_w_n),
+		 .addr_b(rama),
+		 .dout_b(coloram_rgbi)
+	);
 
-	 // output to the top level
-	 // bbb_ggg_rrr
+	// output to the top level
+	// bbb_ggg_rrr
    assign rgb_o = milli ? rgb_o_milli : rgb_o_centi;
 
    wire [8:0] rgb_o_milli = ~{ rgbi[2:0], rgbi[4:3], 1'b1, rgbi[7:5] };
@@ -1229,11 +1261,19 @@ module centipede(
 	 assign vsync_o = vsync;
 	 assign hblank_o = hblank;
 	 assign vblank_o = vblank; // ??? Mist uses vblankd here
-
 	 assign clk_6mhz_o = s_6mhz;
 	 
 	 
 	 // Audio output circuitry
+	 
+	 // ??? mist does not have this
+	 reg [7:0]  last_pokey_rd;
+	 always @(posedge s_6mhz)
+		 if (reset)
+			 last_pokey_rd <= 0;
+		 else
+			 if (~pokey_n)
+	 last_pokey_rd <= pokey_out;
 
    pokey pokey(
       .reset_n(mpu_reset_n), // was ~reset in Mist

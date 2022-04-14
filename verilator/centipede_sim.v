@@ -46,11 +46,9 @@ module top(
 	reg [7:0]  sw1 = 8'b01000000; // 2 lives
 	reg [23:0]  sw2 = 8'h02;
 	
-	wire        milliped  = core_mod[0];
+	wire  milliped  = core_mod[0];
+	wire  [7:0] core_mod = 8'b1;
 	
-	wire  [7:0] core_mod;
-
-	 
 	// MAP INPUTS FROM SIM
 	// -------------------
 	assign playerinput[9] = ~inputs[10]; // coin r
@@ -105,6 +103,8 @@ pause #(3,3,3,24) pause (
 	wire reset = (RESET | rom_download | nvram_download | !rom_downloaded);
 	always @(posedge clk_12) if(rom_download) rom_downloaded <= 1'b1; // Latch downloaded rom state to release reset
 
+	$display ("Milliped = %s", milliped);
+	
 	centipede uut(
 		.clk_12mhz(clk_12),
  		.reset(reset),
