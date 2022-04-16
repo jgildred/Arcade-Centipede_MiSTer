@@ -256,13 +256,14 @@ module centipede(
 
 	 assign vprom_addr = {vblank, s_128v, s_64v, s_32v, s_8v, s_4v, s_2v, s_1v};
 
-	wire [3:0] scrap;
+	 wire [3:0] scrap;
 
-	dpram #(8) vprom
+	 // ??? different values than what mist uses
+	 dpram #(8) vprom
 	 (
 				.clock_a(clk_12mhz),
 				.enable_a(1'b1),
-				.wren_a(dn_wr & prom_cs),
+				.wren_a(dn_wr && prom_cs),
 				.address_a(dn_addr[7:0]),
 				.data_a(dn_data),
 				.q_a(),
@@ -351,13 +352,18 @@ module centipede(
 	wire prog_pf_rom_0_cs = (dn_addr[13:11]==3'b100);
 	wire prog_pf_rom_1_cs = (dn_addr[13:11]==3'b101);
 	wire prom_cs = (dn_addr[13:8]==6'b110000);
+	// Mist versions (breaks Centipede and doesn't fix Millipede)
+	//wire prog_rom_1_cs = (!dn_addr[14]);
+	//wire prog_pf_rom_0_cs = (dn_addr[14:11]==4'b1000);
+	//wire prog_pf_rom_1_cs = (dn_addr[14:11]==4'b1001);
+	//wire prom_cs = (dn_addr[14:8]==7'b1010000);
 
 	// Program ROM
 	dpram #(13) rom
 	(
 		.clock_a(clk_12mhz),
 		.enable_a(1'b1),
-		.wren_a(dn_wr & prog_rom_1_cs),
+		.wren_a(dn_wr && prog_rom_1_cs),
 		.address_a(dn_addr[12:0]),
 		.data_a(dn_data),
 		.q_a(),
@@ -1028,11 +1034,11 @@ module centipede(
 			
 		
 	// ??? this interface is very different from mist version
-	dpram #(11) pf_rom1
+	dpram #(11) pf_rom1 // HJ7
 	(
 				.clock_a(clk_12mhz),
 				.enable_a(1'b1),
-				.wren_a(dn_wr & prog_pf_rom_1_cs),
+				.wren_a(dn_wr && prog_pf_rom_1_cs),
 				.address_a(dn_addr[10:0]),
 				.data_a(dn_data),
 				.q_a(),
@@ -1046,11 +1052,11 @@ module centipede(
 	 );
 
 	// ??? this interface is very different from mist version
-	dpram #(11) pf_rom0
+	dpram #(11) pf_rom0  // F7
 	(
 				.clock_a(clk_12mhz),
 				.enable_a(1'b1),
-				.wren_a(dn_wr & prog_pf_rom_0_cs),
+				.wren_a(dn_wr && prog_pf_rom_0_cs),
 				.address_a(dn_addr[10:0]),
 				.data_a(dn_data),
 				.q_a(),
@@ -1260,7 +1266,8 @@ module centipede(
 	 assign hsync_o = hsync;
 	 assign vsync_o = vsync;
 	 assign hblank_o = hblank;
-	 assign vblank_o = vblank; // ??? Mist uses vblankd here
+	 //assign vblank_o = vblank;
+	 assign vblank_o = vblankd; // ??? Mist uses vblankd here
 	 assign clk_6mhz_o = s_6mhz;
 	 
 	 

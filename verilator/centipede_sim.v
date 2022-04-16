@@ -39,15 +39,18 @@ module top(
 	wire [3:0] led/*verilator public_flat*/;
 	reg [7:0]  trakball/*verilator public_flat*/;
 	reg [7:0]  joystick/*verilator public_flat*/;
-	reg [9:0]  playerinput/*verilator public_flat*/;  
+	reg [9:0]  playerinput/*verilator public_flat*/;
 
 	// Hardcode default switches
-	//reg [7:0]  sw1 = 8'b01001100; // 5 lives
-	reg [7:0]  sw1 = 8'b01000000; // 2 lives
+	//reg [23:0]  sw1 = 8'b01001100; // 5 lives
+	reg [23:0]  sw1 = 8'b01000000; // 2 lives
 	reg [23:0]  sw2 = 8'h02;
 	
 	wire  milliped  = core_mod[0];
-	wire  [7:0] core_mod = 8'b1;
+
+	// hardcode to game mode for testing
+	//wire  [7:0] core_mod = 8'b0; // Centipede
+	wire  [7:0] core_mod = 8'b1; // Millipede
 	
 	// MAP INPUTS FROM SIM
 	// -------------------
@@ -103,8 +106,6 @@ pause #(3,3,3,24) pause (
 	wire reset = (RESET | rom_download | nvram_download | !rom_downloaded);
 	always @(posedge clk_12) if(rom_download) rom_downloaded <= 1'b1; // Latch downloaded rom state to release reset
 
-	$display ("Milliped = %s", milliped);
-	
 	centipede uut(
 		.clk_12mhz(clk_12),
  		.reset(reset),
