@@ -463,17 +463,17 @@ module centipede(
 			.wren(~write_n)
 	);
 
-	 wire irq_n;
+	wire irq_n;
 	 
-	 // Mister version
-	 always @(posedge s_16v or negedge irqres_n)
+	// Mister version
+	always @(posedge s_16v or negedge irqres_n)
 	 	 if (~irqres_n)
 	 		 irq <= 1'b1;
 	 	 else
 	 		 irq <= ~s_32v;
 	 
-	 // Mist version
-	 //always @(posedge s_12mhz or negedge irqres_n)
+	// Mist version
+	//always @(posedge s_12mhz or negedge irqres_n)
 	//	  if (~irqres_n)
 	//		 irq <= 1'b1;
 	//	  else if (s_16v_en)
@@ -564,7 +564,7 @@ module centipede(
 	 // Address Decoder
 	assign write_n = ~(phi2 & ~rw_n);
 	assign brw_n = ~rw_n;
-	//assign rom_n = brw_n | ~ab[13];
+	//assign rom_n = brw_n | ~ab[13]; // already handled below
 
 	//   1111 11
 	//   5432 1098 7654 3210
@@ -950,10 +950,18 @@ module centipede(
 	 assign match_n = match_sum_hold[5] & s_256h_n;
 	 
 	 wire pic7 = milli ? !s_256h & pic[7] : pic[7];
-	 assign mga = { match_mux[3] ^ (pic7 & s_256h_n),
-		  match_mux[2] ^ pic7,
-		  match_mux[1] ^ pic7,
-		  match_mux[0] ^ pic7 };
+	 
+	 // Mister version
+	 assign mga = { match_mux[3] ^ (pic[7] & s_256h_n),
+		  match_mux[2] ^ pic[7],
+		  match_mux[1] ^ pic[7],
+		  match_mux[0] ^ pic[7] };
+		  
+	 // Mist version
+	 //assign mga = { match_mux[3] ^ (pic7 & s_256h_n),
+		//  match_mux[2] ^ pic7,
+		//  match_mux[1] ^ pic7,
+		//  match_mux[0] ^ pic7 };
 
     wire horrot = milli ? (!s_256h & pic[6]) : pic[6];
     wire mga10 = s_256h ? pic[6] : pic[0];
@@ -1058,22 +1066,24 @@ module centipede(
 	 reg  [1:0] mocb, mocb_o;
     wire [1:0] mocbx;
 	 
-	 //always @(posedge s_6mhz_n)
-		// if (reset)
-		//	 gry <= 0;
-		// else
-		//	 if (~mob_n)
-		//		 gry <= 2'b00;
-		//				 else
-		//		 gry <= mr;
-		
-	 always @(posedge s_12mhz, negedge mob_n)
-      if (~mob_n)
-         gry <= 2'b00;
-      else if (s_6mhz_n_en) begin
-         gry <= mr;
-         mocb <= mocb_o;
-      end
+	 // Mister version
+	 always @(posedge s_6mhz_n)
+		 if (reset)
+			 gry <= 0;
+		 else
+			 if (~mob_n)
+				 gry <= 2'b00;
+			 else
+				 gry <= mr;
+	 
+	 // Mist version
+	 //always @(posedge s_12mhz, negedge mob_n)
+    //  if (~mob_n)
+    //     gry <= 2'b00;
+    //  else if (s_6mhz_n_en) begin
+    //     gry <= mr;
+    //     mocb <= mocb_o;
+    // end
 
 	 
 	 //  playfield multiplexer
@@ -1102,8 +1112,8 @@ module centipede(
 		 else
 			if (h_counter[3:1] == 3'b011)		// clock enable rising edge of s_4h
 	        pic <= pf[7:0];
-			//  else if (s_4h_n_en) // from mist
-         //picD <= pic;          // from mist
+			  else if (s_4h_n_en) // from mist
+         picD <= pic;          // from mist
 
 			
 		
