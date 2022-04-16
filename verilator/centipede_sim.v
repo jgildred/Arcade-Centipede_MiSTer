@@ -49,8 +49,8 @@ module top(
 	wire  milliped  = core_mod[0];
 
 	// hardcode to game mode for testing
-	//wire  [7:0] core_mod = 8'b0; // Centipede
-	wire  [7:0] core_mod = 8'b1; // Millipede
+	wire  [7:0] core_mod = 8'b0; // Centipede
+	//wire  [7:0] core_mod = 8'b1; // Millipede
 	
 	// MAP INPUTS FROM SIM
 	// -------------------
@@ -93,7 +93,7 @@ pause #(3,3,3,24) pause (
 	.r(rgb[2:0]),
 	.g(rgb[5:3]),
 	.b(rgb[8:6])
-);
+); 
 
 	// Convert 3bpp output to 8bpp
 	assign VGA_R = {rgb_out[8:6],rgb_out[8:6],rgb_out[8:7]};
@@ -157,6 +157,6 @@ nvram #(
 	.nvram_address(hs_address),
 	.nvram_data_out(hs_data_out),
 	.pause_cpu(hs_pause)
-);
+); 
 
 endmodule

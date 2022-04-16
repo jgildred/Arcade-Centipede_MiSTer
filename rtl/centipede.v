@@ -55,7 +55,7 @@ module centipede(
 	 wire s_12mhz;
 	 wire s_6mhz, s_6mhz_n, s_6mhz_n_en;
 
-	 wire phi0, phi2;
+	 wire phi0, phi2, phi0_en;
 	 reg 	phi0a, phi0a_temp;
 
 	 //
@@ -98,10 +98,13 @@ module centipede(
 	 wire       vsync_n, hsync_n, vblank_n, hblank_n, vreset_n;
 	 wire       hsync_reset;
 	 
-	 wire       s_1h, s_2h, s_4h, s_8h, s_16h, s_32h, s_64h, s_128h, s_256h;
-	 wire       s_1v, s_2v, s_4v, s_8v, s_16v, s_32v, s_64v, s_128v;
-
-	 wire       s_4h_n, s_256h_n, s_4h_n_en;
+    wire       s_1h, s_2h, s_4h, s_8h, s_16h, s_32h, s_64h, s_128h, s_256h;
+    wire       s_1h_en, s_4h_en, s_8h_en, s_32h_en;
+    wire       s_1v, s_2v, s_4v, s_8v, s_16v, s_32v, s_64v, s_128v;
+    wire       s_16v_en;
+	
+    wire       s_4h_n, s_8h_n, s_256h_n;
+    wire       s_4h_n_en, s_256h_n_en;
 	 wire       s_256hd_n;
 	 wire       s_256h2d_n;
 	 wire	      vblankd_n;
@@ -201,52 +204,72 @@ module centipede(
 	
 	 always @(posedge s_12mhz or posedge reset) // ??? Mist removed 'or posedge reset'
 		 if (reset)
-			 h_counter <= 12'b1101_0000_0000;
+			 h_counter <= 12'b1101_0000_0000; // ??? Mist sets to 0 here
 		 else
 			 if (h_counter == 12'hfff)
-	 h_counter <= 12'b1101_0000_0000;
+	          h_counter <= 12'b1101_0000_0000;
 			 else
-	 h_counter <= h_counter + 12'd1;
+	          h_counter <= h_counter + 12'd1;
 
 	 assign s_6mhz = h_counter[0];
+	 assign s_6mhz_en = !h_counter[0];
 	 assign s_1h   = h_counter[1];
+	 assign s_1h_en = h_counter[1:0] == 2'b01;
 	 assign s_2h   = h_counter[2];
 	 assign s_4h   = h_counter[3];
+	 assign s_4h_en = h_counter[3:0] == 4'b0111;
 	 assign s_8h   = h_counter[4];
+	 assign s_8h_en = h_counter[4:0] == 5'b01111;
 	 assign s_16h  = h_counter[5];
 	 assign s_32h  = h_counter[6];
+	 assign s_32h_en = h_counter[6:0] == 7'b0111111;
 	 assign s_64h  = h_counter[7];
 	 assign s_128h = h_counter[8];
 	 assign s_256h = h_counter[9];
 	 
-	 assign s_6mhz_n_en = h_counter[0];
-	 assign s_4h_n_en = h_counter[3:0] == 4'b1111;
+	assign s_4h_n = ~s_4h;
+	assign s_4h_n_en = h_counter[3:0] == 4'b1111;
+	assign s_8h_n = ~s_8h;
+	assign s_256h_n = ~s_256h;
+	assign s_256h_n_en = h_counter[9:0] == 10'b1111111111;
+	
+	assign pload_n = ~(s_1h & s_2h & s_4h);
+	
+	assign s_12mhz = clk_12mhz;
+	assign s_12mhz_n = ~clk_12mhz;
+	assign s_6mhz_n = ~s_6mhz;
+	assign s_6mhz_n_en = h_counter[0];
 
-	 assign s_4h_n = ~s_4h;
-	 assign s_256h_n = ~s_256h;
+   assign v_counter_reset = reset | ~vreset == 0;
 
-	 assign pload_n = ~(s_1h & s_2h & s_4h);
-
-	 assign s_12mhz = clk_12mhz;
-	 assign s_6mhz_n = ~s_6mhz;
-
-	 assign v_counter_reset = reset | vreset_n == 0;
-
+	 // Mister version
 	 always @(posedge s_256h_n or posedge reset)  // ??? Mist removed 'or posedge reset'
-		 if (reset)
-			 v_counter <= 0;
-		 else
+	 	 if (reset)
+	 		 v_counter <= 0;
+	 	 else
 			 /* ld# is on positive clock edge */
-			 if (vreset_n == 0)
-	 v_counter <= 0;
-			 else
-	 v_counter <= v_counter + 8'd1;
+	 		 if (vreset_n == 0)
+	           v_counter <= 0;
+	 		 else
+	           v_counter <= v_counter + 8'd1;
+	 
+	 // Mist version
+	 //always @(posedge s_12mhz)
+    // if (reset)
+    //   v_counter <= 0;
+    // else if (s_256h_n_en)
+       /* ld# is on positive clock edge */
+    //   if (vreset == 1)
+    //     v_counter <= 0;
+    //   else
+    //     v_counter <= v_counter + 8'd1;
 	 
 	 assign s_1v   = v_counter[0];
 	 assign s_2v   = v_counter[1];
 	 assign s_4v   = v_counter[2];
 	 assign s_8v   = v_counter[3];
 	 assign s_16v  = v_counter[4];
+	 assign s_16v_en = s_256h_n_en & v_counter[4:0] == 5'b01111;
 	 assign s_32v  = v_counter[5];
 	 assign s_64v  = v_counter[6];
 	 assign s_128v = v_counter[7];
@@ -254,6 +277,25 @@ module centipede(
 	 assign mob_n = ~((s_256h_n & s_256hd) | (s_256h2d_n & s_256hd)) | milli;
 	 assign blank_clk = ~s_12mhz & (h_counter[3:0] == 4'b1111);
 
+	 // ??? mist code is 'always @(posedge s_12mhz)'
+	 always @(posedge blank_clk or posedge reset)
+		 if (reset)
+			begin
+				s_256h2d <= 1'b0;
+				s_256hd <= 1'b0;
+				vblankd <= 1'b0;
+			end
+		 else  // Mister version
+		 //else if (h_counter[3:0] == 4'b1111) // Mist version
+			begin
+				s_256h2d <= s_256hd;
+				s_256hd <= s_256h;
+				vblankd <= vblank;
+			end
+
+	 assign s_256h2d_n = ~s_256h2d;
+	 assign s_256hd_n = ~s_256hd;
+	 assign vblankd_n = ~vblankd;
 	 assign vprom_addr = {vblank, s_128v, s_64v, s_32v, s_8v, s_4v, s_2v, s_1v};
 
 	 wire [3:0] scrap;
@@ -275,11 +317,22 @@ module centipede(
 				.data_b(),
 				.q_b({scrap,vprom_out})
 	 );
+	 
+	 // Mister version
 	 always @(posedge s_256h_n or posedge reset)
-		 if (reset)
-			 vprom_reg <= 0;
-		 else
-			 vprom_reg <= vprom_out;
+	 	 if (reset)
+	 		 vprom_reg <= 0;
+	 	 else
+	 		 vprom_reg <= vprom_out;
+	 
+	 // Mist version
+    //always @(posedge s_12mhz)
+	//	if (reset)
+	//		vprom_reg <= 0;
+	//	else if (s_256h_n_en)
+	//		vprom_reg <= vprom_out;
+	//		else if (s_256h_n_en)
+	//			vprom_reg <= vprom_out;
 
 	 assign vsync = vprom_reg[0];
 	 assign vsync_n = ~vprom_reg[0];
@@ -290,7 +343,6 @@ module centipede(
 	 assign vblank = vprom_reg[3];
 	 assign vblank_n = ~vprom_reg[3];
 
-	 //
 	 assign hs_set = reset | ~s_256h_n;
 	 
 	 always @(posedge s_32h or posedge hs_set)
@@ -308,32 +360,56 @@ module centipede(
 			 hsync <= s_32h;
 
 	 assign hsync_n = ~hsync;
+	 
 
-	 //
 	 always @(posedge s_6mhz)
 		 if (reset)
 			 coloren_temp <= 0;
 		 else
 			 coloren_temp <= s_256hd;
-
+	
+	// Mister version	
 	always @(negedge s_6mhz)
 		 if (reset)
 			 coloren <= 0;
 		 else
 			 coloren <= coloren_temp;
+	
+	// Mist version
+	//always @(posedge s_12mhz)
+	//	if (reset)
+	//		coloren <= 0;
+	//	else if (s_6mhz_en)
+	//		coloren <= s_256hd;
 
 	 assign s_6_12 = ~(s_6mhz & s_12mhz);
 
 	 reg xxx1;
 	 
+	 // Mister version
 	 always @(posedge s_6_12)
-		 if (reset)
-			 xxx1 <= 0;
-		 else
-			 xxx1 <= coloren;
-
-	 assign hblank_n = ~(~xxx1 & ~coloren);
-
+	 	 if (reset)
+	 		 xxx1 <= 0;
+	 	 else
+	 		 xxx1 <= coloren;
+	 
+	 // Mist version
+	 //always @(posedge s_12mhz)//s_6_12)
+	//	if (reset)
+	//		xxx1 <= 0;
+	//	else if (s_6mhz_en)
+	//		xxx1 <= coloren;
+	
+	// Mist includes this code
+	//reg hblank1_n;
+   //always @(posedge s_12mhz)
+   //if (reset)
+   //   hblank1_n <= 0;
+   //else if (s_6mhz_n_en)
+   //   hblank1_n <= s_256hd;
+			
+	 //assign vblank = vprom_reg[3]; // Added on Mist
+	 assign hblank_n = ~(~xxx1 & ~coloren); // Mist removed this line, but removing breaks centipede
 	 assign hblank = ~hblank_n;
 
 	/*
@@ -352,6 +428,7 @@ module centipede(
 	wire prog_pf_rom_0_cs = (dn_addr[13:11]==3'b100);
 	wire prog_pf_rom_1_cs = (dn_addr[13:11]==3'b101);
 	wire prom_cs = (dn_addr[13:8]==6'b110000);
+	
 	// Mist versions (breaks Centipede and doesn't fix Millipede)
 	//wire prog_rom_1_cs = (!dn_addr[14]);
 	//wire prog_pf_rom_0_cs = (dn_addr[14:11]==4'b1000);
@@ -386,35 +463,54 @@ module centipede(
 			.wren(~write_n)
 	);
 
-	 wire        irq_n;
+	 wire irq_n;
 	 
+	 // Mister version
 	 always @(posedge s_16v or negedge irqres_n)
-		 if (~irqres_n)
-			 irq <= 1'b1;
-		 else
-			 irq <= ~s_32v;
+	 	 if (~irqres_n)
+	 		 irq <= 1'b1;
+	 	 else
+	 		 irq <= ~s_32v;
+	 
+	 // Mist version
+	 //always @(posedge s_12mhz or negedge irqres_n)
+	//	  if (~irqres_n)
+	//		 irq <= 1'b1;
+	//	  else if (s_16v_en)
+	//		 irq <= ~s_32v;
 
 	assign irq_n = irq;
 
+	// ??? This is not in Mist version
 	always @(posedge s_1h)
 		if (reset)
 			phi0a_temp <= 1'b0;
 		else
 			case ({(pf_n | s_4h), s_2h})
-			2'b00: phi0a_temp <= phi0a_temp;
+			2'b00: phi0a_temp <= phi0a_temp; // ??? remove?
 			2'b01: phi0a_temp <= 1'b0;
 			2'b10: phi0a_temp <= 1'b1;
 			2'b11: phi0a_temp <= ~phi0a_temp;
 			endcase
 
+	// Mister version
 	always @(negedge s_1h)
 		if (reset)
 			phi0a <= 1'b0;
 		else
 			phi0a <= phi0a_temp;
+	
+	// Mist version
+	//always @(posedge s_12mhz)
+   //  if (reset)
+   //    phi0a <= 1'b0;
+   //  else if (s_1h_en)
+   //    phi0a <= ~phi0a;
 
 	assign phi0 = ~phi0a;
-
+	assign pac_n = ~phi0a;
+	assign phi0_en = s_1h_en & phi0a;
+	
 	// watchdog?
 	always @(posedge s_12mhz)
 		if (reset)
@@ -430,8 +526,8 @@ module centipede(
 				mpu_reset <= 0;
 			end
 
-		assign mpu_clk = s_6mhz;
-		assign mpu_reset_n = ~mpu_reset;
+	assign mpu_clk = s_6mhz;
+	assign mpu_reset_n = ~mpu_reset;
 
 	//assign phi2 = ~phi0;
 	// T65 cpu(
@@ -595,30 +691,8 @@ module centipede(
 		 ~swrd_n ? switch_out :
 		 ~pokey_n ? pokey_out :
 		 8'b0;
-
-	 //assign mob_n = ~(s_256h_n & s_256hd) & ~(s_256h2d_n & s_256hd);
-	 //assign blank_clk = ~s_12mhz & (h_counter[3:0] == 4'b1111);
-
-	 // ??? mist code is 'always @(posedge s_12mhz)'
-	 always @(posedge blank_clk or posedge reset)
-		 if (reset)
-			 begin
-		s_256h2d <= 1'b0;
-		s_256hd <= 1'b0;
-		vblankd <= 1'b0;
-			 end
-		 else  // mist includes  if (h_counter[3:0] == 4'b1111)
-			 begin
-		s_256h2d <= s_256hd;
-		s_256hd <= s_256h;
-		vblankd <= vblank;
-			 end
-
-	 assign s_256h2d_n = ~s_256h2d;
-	 assign s_256hd_n = ~s_256hd;
-	 assign vblankd_n = ~vblankd;
 	 
-	 	// EAROM (top 3 high scores)
+	// EAROM (top 3 high scores)
 	reg [5:0]   earom_addr;
 	wire [7:0]  earom_out;
 	reg [7:0]   earom_in;
@@ -958,28 +1032,28 @@ module centipede(
 	 
 	 assign line_ram_addr = line_ram_ctr;
 	 
-	 // previous mister code
-	 //always @(posedge s_6mhz)
-	 //  line_ram[line_ram_addr] <= y;
+	 // Mister version
+	 always @(posedge s_6mhz)
+	   line_ram[line_ram_addr] <= y;
 	 
-	 // from mist
-	 always @(posedge s_12mhz)
-     if (~s_6mhz) line_ram[line_ram_addr] <= {mocbx, y};
-
-	 // previous mister code
+	 // Mist version
 	 //always @(posedge s_12mhz)
-	 //	 if (reset)
-	 //		 mr <= 0;
-	 //	 else
-	 //		 mr <= line_ram[line_ram_addr];
+    // if (~s_6mhz) line_ram[line_ram_addr] <= {mocbx, y};
+
+	 // Mister version
+	 always @(posedge s_12mhz)
+	 	 if (reset)
+	 		 mr <= 0;
+	 	 else
+	 		 mr <= line_ram[line_ram_addr];
 			
-	 // from mist	
-	 always @(negedge s_12mhz)
-     if (reset) begin
-       mr <= 0;
-       mocb_o <= 0;
-     end else
-       {mocb_o, mr} <= line_ram[line_ram_addr];
+	 // Mist version	
+	 //always @(negedge s_12mhz)
+    // if (reset) begin
+    //   mr <= 0;
+    //   mocb_o <= 0;
+    // end else
+    //   {mocb_o, mr} <= line_ram[line_ram_addr];
 		 
 	 reg  [1:0] mocb, mocb_o;
     wire [1:0] mocbx;
@@ -1028,8 +1102,8 @@ module centipede(
 		 else
 			if (h_counter[3:1] == 3'b011)		// clock enable rising edge of s_4h
 	        pic <= pf[7:0];
-			  else if (s_4h_n_en) // from mist
-         picD <= pic;          // from mist
+			//  else if (s_4h_n_en) // from mist
+         //picD <= pic;          // from mist
 
 			
 		
@@ -1266,8 +1340,8 @@ module centipede(
 	 assign hsync_o = hsync;
 	 assign vsync_o = vsync;
 	 assign hblank_o = hblank;
-	 //assign vblank_o = vblank;
-	 assign vblank_o = vblankd; // ??? Mist uses vblankd here
+	 assign vblank_o = vblank; // Mister code
+	 //assign vblank_o = vblankd; // Mist code
 	 assign clk_6mhz_o = s_6mhz;
 	 
 	 
